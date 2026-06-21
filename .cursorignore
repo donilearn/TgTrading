@@ -1,0 +1,25 @@
+﻿# Virtual environment
+venv/
+
+# Secrets & credentials
+.env
+.env.*
+.env.example
+
+# Telegram session files
+*.session
+*.session-journal
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
