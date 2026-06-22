@@ -22,17 +22,11 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     settings = get_settings()
     pipeline = TradingPipeline(settings)
-
-    try:
-        await pipeline.run()
-    except asyncio.CancelledError:
-        logger.info("Shutting down...")
-    finally:
-        await pipeline.stop()
+    await pipeline.run()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stopped by user (Ctrl+C)")
+        pass

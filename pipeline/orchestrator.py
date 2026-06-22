@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 
 from ai.analyzer import SignalAnalyzer
@@ -13,8 +14,11 @@ from trading.client import MetaApiService
 from trading.existing_orders_service import ExistingOrdersService
 from trading.market_context_service import MarketContextService
 from trading.order_limit_tracker import OrderLimitTracker
+from pipeline.shutdown_handler import ShutdownHandler
 
 logger = logging.getLogger(__name__)
+
+_TELEGRAM_STOP_TIMEOUT = 10.0
 
 
 class TradingPipeline:
@@ -154,16 +158,49 @@ class TradingPipeline:
     async def run(self) -> None:
         await self.start()
         try:
-            await self._telegram.client.run_until_disconnected()
-        except asyncio.CancelledError:
-            logger.info("Telegram listener stopped")
+            await self._run_until_shutdown()
         finally:
             await self.stop()
+
+    async def _run_until_shutdown(self) -> None:
+        shutdown = ShutdownHandler()
+        shutdown.register()
+
+        run_task = asyncio.create_task(
+            self._telegram.client.run_until_disconnected(),
+            name="telegram-listener",
+        )
+        shutdown_task = asyncio.create_task(
+            shutdown.wait(),
+            name="shutdown-wait",
+        )
+
+        done, _pending = await asyncio.wait(
+            [run_task, shutdown_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if shutdown_task in done:
+            logger.info("Graceful shutdown started")
+            await self._telegram.stop()
+
+            if not run_task.done():
+                with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                    await asyncio.wait_for(run_task, timeout=_TELEGRAM_STOP_TIMEOUT)
+                if not run_task.done():
+                    run_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await run_task
+            return
+
+        exc = run_task.exception()
+        if exc is not None:
+            raise exc
 
     async def stop(self) -> None:
         if self._stopped:
             return
         self._stopped = True
 
-        await self._telegram.stop()
         await self._metaapi.disconnect()
+        await self._telegram.stop()

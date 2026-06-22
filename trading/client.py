@@ -51,11 +51,9 @@ class MetaApiService:
 
     async def reconnect_rpc(self) -> None:
         if self._connection is not None:
-            try:
-                await self._connection.close()
-            except Exception as exc:
-                logger.debug("RPC close before reconnect: %s", exc)
+            old = self._connection
             self._connection = None
+            await self._close_rpc_connection(old)
 
         account = await self._api.metatrader_account_api.get_account(
             self._account_id,
@@ -72,16 +70,28 @@ class MetaApiService:
         if not self._connected and self._connection is None:
             return
 
-        if self._connection is not None:
-            try:
-                await self._connection.close()
-            except Exception as exc:
-                logger.debug("MetaAPI RPC close: %s", exc)
-            self._connection = None
+        connection = self._connection
+        self._connection = None
+        self._connected = False
+
+        if connection is not None:
+            await self._close_rpc_connection(connection)
 
         await self._close_websocket_client()
-        self._connected = False
         logger.info("MetaAPI disconnected")
+
+    async def _close_rpc_connection(self, connection) -> None:
+        """SDK RpcMetaApiConnectionInstance.close() schedules work in background."""
+        try:
+            if getattr(connection, "_closed", False):
+                return
+            inner = connection._meta_api_connection
+            await inner.close(connection.instance_id)
+            connection._closed = True
+        except KeyError:
+            pass
+        except Exception as exc:
+            logger.debug("MetaAPI RPC close: %s", exc)
 
     async def _close_websocket_client(self) -> None:
         """SDK MetaApi.close() does not await websocket — close explicitly."""
