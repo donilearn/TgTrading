@@ -10,6 +10,7 @@ class ShutdownHandler:
 
     def __init__(self) -> None:
         self._event = asyncio.Event()
+        self._signal_count = 0
 
     @property
     def requested(self) -> bool:
@@ -21,6 +22,10 @@ class ShutdownHandler:
             loop.add_signal_handler(sig, self._on_signal)
 
     def _on_signal(self) -> None:
+        self._signal_count += 1
+        if self._signal_count > 1:
+            logger.warning("Forced shutdown (signal received again)")
+            raise SystemExit(1)
         if not self._event.is_set():
             logger.info("Shutdown signal received")
             self._event.set()

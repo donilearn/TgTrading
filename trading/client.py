@@ -76,6 +76,7 @@ class MetaApiService:
 
         if connection is not None:
             await self._close_rpc_connection(connection)
+            await asyncio.sleep(0.3)
 
         await self._close_websocket_client()
         logger.info("MetaAPI disconnected")

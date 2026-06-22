@@ -19,12 +19,15 @@ from pipeline.shutdown_handler import ShutdownHandler
 logger = logging.getLogger(__name__)
 
 _TELEGRAM_STOP_TIMEOUT = 10.0
+_INFLIGHT_DRAIN_TIMEOUT = 15.0
 
 
 class TradingPipeline:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._stopped = False
+        self._shutting_down = False
+        self._inflight_messages = 0
 
         self._telegram = TelegramService(settings)
         self._gemini = GeminiClient(settings)
@@ -49,6 +52,21 @@ class TradingPipeline:
         )
 
     async def _handle_message(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+    ) -> None:
+        if self._shutting_down or self._stopped:
+            logger.info("Ignoring message during shutdown from %s", message.chat_id)
+            return
+
+        self._inflight_messages += 1
+        try:
+            await self._process_message(message, context)
+        finally:
+            self._inflight_messages -= 1
+
+    async def _process_message(
         self,
         message: ChatMessage,
         context: list[ChatMessage],
@@ -182,6 +200,7 @@ class TradingPipeline:
 
         if shutdown_task in done:
             logger.info("Graceful shutdown started")
+            self._shutting_down = True
             await self._telegram.stop()
 
             if not run_task.done():
@@ -201,6 +220,27 @@ class TradingPipeline:
         if self._stopped:
             return
         self._stopped = True
+        self._shutting_down = True
 
-        await self._metaapi.disconnect()
+        await self._wait_for_inflight_handlers()
         await self._telegram.stop()
+        await self._metaapi.disconnect()
+        logger.info("Pipeline stopped")
+
+    async def _wait_for_inflight_handlers(self) -> None:
+        if self._inflight_messages <= 0:
+            return
+
+        logger.info(
+            "Waiting for %d in-flight message handler(s)...",
+            self._inflight_messages,
+        )
+        deadline = asyncio.get_running_loop().time() + _INFLIGHT_DRAIN_TIMEOUT
+        while self._inflight_messages > 0:
+            if asyncio.get_running_loop().time() >= deadline:
+                logger.warning(
+                    "Shutdown timeout: %d handler(s) still running",
+                    self._inflight_messages,
+                )
+                return
+            await asyncio.sleep(0.1)

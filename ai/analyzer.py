@@ -31,6 +31,7 @@ class SignalAnalyzer:
             settings.max_volume,
             settings.default_volume,
             settings.aggressive_mode,
+            settings.orders_expiration_minutes,
         )
 
     async def analyze(

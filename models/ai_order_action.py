@@ -33,3 +33,11 @@ class AiOrderAction(BaseModel):
         default=None,
         description="Lot hajmi (bo'sh bo'lsa default ishlatiladi)",
     )
+    expiration_minutes: int | None = Field(
+        default=None,
+        alias="expirationMinutes",
+        description=(
+            "Pending order expire (minut). null=ORDERS_EXPIRATION default. "
+            "0=expire yo'q (GTC). limit/stop uchun."
+        ),
+    )

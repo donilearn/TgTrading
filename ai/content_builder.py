@@ -16,24 +16,30 @@ def build_analysis_contents(
 ) -> list:
     parts: list = []
 
+    magic = settings.get_group_magic(message.chat_id)
+
     parts.append(types.Part.from_text(
         text=format_analysis_context(
             existing_orders,
             market,
             settings,
+            chat_id=message.chat_id,
+            magic=magic,
         ),
     ))
 
     if context:
         context_lines = [
-            f"{i + 1}. {msg.format_for_context()}"
+            f"{i + 1}. [guruh={msg.chat_id}] {msg.format_for_context()}"
             for i, msg in enumerate(context)
         ]
         parts.append(types.Part.from_text(
             text="Oxirgi guruh xabarlari (kontekst):\n" + "\n".join(context_lines),
         ))
 
-    current_label = f"Joriy xabar [{message.sender}]"
+    current_label = (
+        f"Joriy xabar [guruh={message.chat_id}, magic={magic}, {message.sender}]"
+    )
     if message.text:
         parts.append(types.Part.from_text(
             text=f"{current_label}:\n{message.text}",

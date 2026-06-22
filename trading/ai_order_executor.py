@@ -11,6 +11,7 @@ from models.signal import SignalAnalysis, TradeAction
 from models.signal_type import SignalType
 from models.trade_result import TradeResult
 from trading.client_id import build_trade_options
+from trading.order_expiration_builder import apply_pending_order_expiration
 from trading.error_formatter import format_trade_error
 from trading.order_router import OrderRouter
 from trading.price_normalizer import normalize_price
@@ -181,6 +182,12 @@ class AiOrderExecutor:
             volume=volume,
         )
         options = build_trade_options(symbol, index, magic, False)
+        options = apply_pending_order_expiration(
+            options,
+            order_type,
+            action.expiration_minutes,
+            self._settings.orders_expiration_minutes,
+        )
 
         result = await self._router.place_order(
             connection, signal, volume, entry_price,

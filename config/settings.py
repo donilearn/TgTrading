@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     max_order_per_group: int = Field(default=5, ge=1)
     context_message_count: int = Field(default=5, ge=1)
     aggressive_mode: bool = False
+    orders_expiration_minutes: int = Field(
+        default=20,
+        ge=0,
+        alias="ORDERS_EXPIRATION",
+        description="Default pending order expiration in minutes when AI returns null",
+    )
 
     @property
     def effective_max_order_count(self) -> int:
