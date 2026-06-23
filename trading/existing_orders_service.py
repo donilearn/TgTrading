@@ -26,6 +26,12 @@ class ExistingOrdersService:
 
         return orders
 
+    async def fetch_global_count(self, connection, magics: list[int]) -> int:
+        total = 0
+        for magic in magics:
+            total += len(await self.fetch(connection, magic))
+        return total
+
     def _from_position(self, raw: dict) -> ExistingOrder:
         return ExistingOrder(
             order_number=str(raw.get("id", "")),

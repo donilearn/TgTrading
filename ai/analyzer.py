@@ -8,6 +8,9 @@ from ai.client import GeminiClient
 from ai.content_builder import build_analysis_contents
 from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
+from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
+from ai.redundant_market_guard import remove_redundant_market_entries
+from ai.zone_grid_expander import expand_zone_grid_orders
 from config.settings import Settings
 from models.ai_trade_response import AiTradeResponse
 from models.chat_message import ChatMessage
@@ -26,8 +29,9 @@ class SignalAnalyzer:
         self._system_prompt = build_system_prompt(
             self._allowed_symbols,
             settings.default_symbol,
-            settings.effective_max_order_per_group,
-            settings.effective_max_order_count,
+            settings.max_orders_per_message,
+            settings.max_order_per_group,
+            settings.max_order_count,
             settings.min_volume,
             settings.max_volume,
             settings.default_volume,
@@ -41,6 +45,7 @@ class SignalAnalyzer:
         context: list[ChatMessage],
         existing_orders: list[ExistingOrder],
         market: list[SymbolMarketInfo],
+        global_order_count: int | None = None,
     ) -> AiTradeResponse:
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
@@ -52,6 +57,7 @@ class SignalAnalyzer:
         )
         contents = build_analysis_contents(
             message, context, existing_orders, market, self._settings,
+            global_order_count=global_order_count,
         )
 
         primary_model = self._gemini.model
@@ -77,6 +83,16 @@ class SignalAnalyzer:
 
             result = response.parsed or AiTradeResponse.model_validate_json(response.text)
             result = self._validate_symbol(result)
+            result = remove_redundant_market_entries(result, existing_orders)
+            result = patch_existing_positions_sltp(result, existing_orders)
+            result = expand_zone_grid_orders(
+                result,
+                self._settings,
+                len(existing_orders),
+                global_order_count,
+                message_text=message.text,
+                market=market,
+            )
             return result
 
         except Exception as exc:

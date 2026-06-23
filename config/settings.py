@@ -4,6 +4,10 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.group_magic import group_magic_map, magic_from_group_id
+from config.order_limits import (
+    AGGRESSIVE_ORDERS_PER_MESSAGE,
+    NORMAL_ORDERS_PER_MESSAGE,
+)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,16 +51,14 @@ class Settings(BaseSettings):
     )
 
     @property
-    def effective_max_order_count(self) -> int:
+    def max_orders_per_message(self) -> int:
         if self.aggressive_mode:
-            return self.max_order_count * 2
-        return self.max_order_count
+            return AGGRESSIVE_ORDERS_PER_MESSAGE
+        return NORMAL_ORDERS_PER_MESSAGE
 
     @property
-    def effective_max_order_per_group(self) -> int:
-        if self.aggressive_mode:
-            return self.max_order_per_group * 2
-        return self.max_order_per_group
+    def group_magic_list(self) -> list[int]:
+        return list(self.group_magic_by_id.values())
 
     @property
     def group_magic_by_id(self) -> dict[int, int]:

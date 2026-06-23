@@ -9,14 +9,11 @@ def format_analysis_context(
     settings: Settings,
     chat_id: int,
     magic: int,
+    global_order_count: int | None = None,
 ) -> str:
-    mode_hint = ""
-    if settings.aggressive_mode:
-        mode_hint = (
-            f" | AGGRESSIVE_MODE=ON "
-            f"(limit 2x: {settings.effective_max_order_per_group}/guruh, "
-            f"{settings.effective_max_order_count} global)"
-        )
+    group_remaining = max(0, settings.max_order_per_group - len(existing_orders))
+    global_remaining = max(0, settings.max_order_count - (global_order_count or len(existing_orders)))
+    mode_label = "AGGRESSIVE" if settings.aggressive_mode else "NORMAL"
 
     lines = [
         "=== GURUHLAR (Telegram chat_id → MetaTrader magic) ===",
@@ -31,12 +28,14 @@ def format_analysis_context(
         "=== BOZOR (joriy holat — shu asosida tahlil qil) ===",
         _format_market(market),
         "",
-        f"Limitlar{mode_hint}: max {settings.effective_max_order_per_group} order/guruh, "
-        f"{settings.effective_max_order_count} global | "
-        f"joriy guruhda mavjud {len(existing_orders)} ta, "
-        f"qolgan slot {max(0, settings.effective_max_order_per_group - len(existing_orders))} ta | "
-        f"volume {settings.min_volume}..{settings.max_volume} "
-        f"(default {settings.default_volume})",
+        f"=== LIMITLAR ({mode_label}) ===",
+        f"Shu xabar (1 signal): max {settings.max_orders_per_message} ta yangi entry",
+        f"Guruh jami (barcha xabarlar): max {settings.max_order_per_group} ta | "
+        f"mavjud {len(existing_orders)} | qolgan {group_remaining}",
+        f"Global jami (barcha guruhlar): max {settings.max_order_count} ta | "
+        f"mavjud {global_order_count if global_order_count is not None else '?'} | "
+        f"qolgan {global_remaining if global_order_count is not None else '?'}",
+        f"volume {settings.min_volume}..{settings.max_volume} (default {settings.default_volume})",
     ]
     return "\n".join(lines)
 

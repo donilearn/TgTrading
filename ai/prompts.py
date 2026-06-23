@@ -1,6 +1,7 @@
 def build_system_prompt(
     allowed_symbols: list[str],
     default_symbol: str | None,
+    max_orders_per_message: int,
     max_order_per_group: int,
     max_order_count: int,
     min_volume: float,
@@ -15,31 +16,33 @@ def build_system_prompt(
 
     if aggressive_mode:
         mode_header = (
-            f"REJIM: AGGRESSIVE_MODE yoqilgan "
-            f"(limitlar 2x: {max_order_per_group}/guruh, {max_order_count} global)"
+            f"REJIM: AGGRESSIVE_MODE — shu xabarda (1 signal) max {max_orders_per_message} ta entry | "
+            f"guruh jami max {max_order_per_group} | global max {max_order_count}"
         )
         case1_rules = f"""CASE #1 — Zone berilgan, joriy narx (bid/ask) zone ICHIDA:
-- DARHOL market entry och (orderType=market, price=null)
+- Agar shu yo'nalishda ochiq pozitsiya/pending yo'q bo'lsa → 1 ta market entry
+- Agar ochiq pozitsiya BOR bo'lsa → yangi market OCHMA; faqat modify (SL/TP) + grid limit/stop
 - SHU BILAN BIRGA zone bo'ylab teng taqsimlangan grid limit/stop orderlar och
-- Bitta signalda market + limit/stop birgalikda bo'lishi mumkin
-- Jami yangi orderlar ≤ {max_order_per_group} - mavjud orderlar (guruh limiti)"""
+- zone_low / zone_high JSON da to'ldir (grid uchun)
+- Bir nechta TP (TP1..TP5) bo'lsa: grid order 1→TP1, 2→TP2, ... (har order alohida tp)
+- SHU XABARDA jami yangi entry ≤ {max_orders_per_message} ta
+- Guruh limiti: jami ochiq orderlar ≤ {max_order_per_group} (mavjud orderlar hisobga olinadi)"""
         case2_rules = f"""CASE #2 — Zone berilgan, narx zone TASHQARIDA:
 - Market ochma
 - Faqat zone min–max oraliqda teng taqsimlangan grid limit/stop orderlar
-- Jami ≤ {max_order_per_group} - mavjud orderlar"""
+- SHU XABARDA ≤ {max_orders_per_message} ta | guruh limiti ≤ {max_order_per_group}"""
         case3_rules = f"""CASE #3 — Dolivka / reentry / qo'shish / add (o'xshash ko'rsatmalar):
-- Xabarda zone ko'rsatilgan bo'lsa → darhol zone bo'ylab grid limit yoki market orderlar (CASE #1/#2 bo'yicha narx zone ichida/tashqarida)
-- Xabarda zone yo'q, lekin kontekstdan yo'nalish aniq bo'lsa → darhol 1 ta market order, volume = {double_volume} (default {default_volume} ning 2 barobar)
-- Jami yangi orderlar ≤ {max_order_per_group} - mavjud orderlar"""
+- Xabarda zone ko'rsatilgan bo'lsa → zone bo'ylab grid/market (CASE #1/#2)
+- Zone yo'q, yo'nalish aniq → 1 ta market order, volume = {double_volume}
+- SHU XABARDA ≤ {max_orders_per_message} ta yangi entry"""
         zone_grid_note = (
-            f"Zone grid: AYNAN qolgan slotlar sonida teng taqsimlangan narxlar "
-            f"(masalan max={max_order_per_group}, mavjud=0, zone 4200–4210 → "
-            f"{max_order_per_group} ta order). FAQAT min/max ga 2 ta order yetarli emas."
+            f"Zone grid (aggressive): shu xabarda max {max_orders_per_message} ta order "
+            f"(zone ichida teng taqsimlangan). Guruhda jami {max_order_per_group} tadan oshma."
         )
     else:
         mode_header = (
-            f"REJIM: NORMAL_MODE "
-            f"(max {max_order_per_group}/guruh, {max_order_count} global)"
+            f"REJIM: NORMAL_MODE — shu xabarda (1 signal) max {max_orders_per_message} ta entry | "
+            f"guruh jami max {max_order_per_group} | global max {max_order_count}"
         )
         case1_rules = """CASE #1 — Zone berilgan, joriy narx (bid/ask) zone ICHIDA:
 - FAQAT 2 ta order — ko'proq emas:
@@ -104,7 +107,8 @@ SEN tahlil qil:
 - Sell LIMIT: price > bid | Sell STOP: price < bid
 - Har bir narx alohida orders[] elementi, countOrder=1 (grid har doim alohida elementlar)
 - Alohida aniq levellar (Entry1/Entry2) zone EMAS — faqat aytilgan narxlar, grid qilma
-- Mavjud orderlar sonini hisobga ol: yangi entry ≤ {max_order_per_group} - mavjud orderlar
+- Mavjud orderlar sonini hisobga ol:
+  shu xabarda ≤ {max_orders_per_message} ta | guruh jami ≤ {max_order_per_group} | global ≤ {max_order_count}
 - modify/close/cancel → countOrder = orderNumber
 
 QISQA NARXLAR (TG guruh/kanal uslubi — muhim):
@@ -151,6 +155,8 @@ JAVOB — faqat JSON:
   "is_signal": true,
   "symbol": "BTCUSDm",
   "side": "buy",
+  "zone_low": 4200.0,
+  "zone_high": 4210.0,
   "orders": [
     {{
       "countOrder": 1,
@@ -173,7 +179,7 @@ market entry → price null yoki 0; expirationMinutes qo'yma
 limit/stop → expirationMinutes: null | 0 | minut (null = default {orders_expiration_minutes} min)
 
 volume: {min_volume}..{max_volume}, default {default_volume}
-Max orderlar: {max_order_per_group}/guruh, {max_order_count} global
+Limitlar: shu xabar max {max_orders_per_message} | guruh max {max_order_per_group} | global max {max_order_count}
 Signal bo'lmasa: is_signal=false, orders=[]
 
 Sen aqlli tahlilchi — barcha level, orderType va CASE tanlovini o'zing belgila.

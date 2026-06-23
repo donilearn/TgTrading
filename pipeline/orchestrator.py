@@ -35,8 +35,8 @@ class TradingPipeline:
         self._analyzer = SignalAnalyzer(self._gemini, settings)
         self._metaapi = MetaApiService(settings)
         self._limit_tracker = OrderLimitTracker(
-            max_orders=settings.effective_max_order_count,
-            max_per_group=settings.effective_max_order_per_group,
+            max_orders=settings.max_order_count,
+            max_per_group=settings.max_order_per_group,
         )
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
@@ -88,15 +88,20 @@ class TradingPipeline:
             )
 
             existing, market = await self._context_loader.load(magic, message.chat_id)
+            global_count = await self._existing_orders.fetch_global_count(
+                self._metaapi.connection,
+                self._settings.group_magic_list,
+            )
             logger.info(
-                "Context loaded chat=%s orders=%d market_symbols=%d",
+                "Context loaded chat=%s orders=%d global=%d market_symbols=%d",
                 message.chat_id,
                 len(existing),
+                global_count,
                 len(market),
             )
 
             response = await self._analyzer.analyze(
-                message, context, existing, market,
+                message, context, existing, market, global_count,
             )
 
             for item in response.orders:
@@ -126,9 +131,13 @@ class TradingPipeline:
                 return
 
             planned = self._executor.count_planned_orders(response)
-            existing_count = len(existing)
+            existing_group_count = len(existing)
             allowed, limit_msg, to_place = self._limit_tracker.can_place(
-                message.chat_id, planned, existing_count,
+                message.chat_id,
+                planned,
+                existing_group_count,
+                global_count,
+                self._settings.max_orders_per_message,
             )
             if not allowed:
                 logger.info("Trade skipped: %s", limit_msg)
@@ -176,15 +185,16 @@ class TradingPipeline:
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"
-        aggressive = "ON (2x limits)" if self._settings.aggressive_mode else "OFF"
+        mode_label = "AGGRESSIVE" if self._settings.aggressive_mode else "NORMAL"
         logger.info(
-            "Pipeline started in %s mode — groups: %s, "
-            "max %d/group, max %d total, aggressive=%s",
+            "Pipeline started in %s mode (%s) — groups: %s, "
+            "msg max %d, group max %d, global max %d",
             mode,
+            mode_label,
             self._settings.parsed_group_ids,
-            self._settings.effective_max_order_per_group,
-            self._settings.effective_max_order_count,
-            aggressive,
+            self._settings.max_orders_per_message,
+            self._settings.max_order_per_group,
+            self._settings.max_order_count,
         )
         for chat_id, magic in self._settings.group_magic_by_id.items():
             logger.info("  Group %s → magic %s", chat_id, magic)
