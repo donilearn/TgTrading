@@ -29,7 +29,7 @@ class SignalAnalyzer:
         self._system_prompt = build_system_prompt(
             self._allowed_symbols,
             settings.default_symbol,
-            settings.max_orders_per_message,
+            settings.max_order_per_group,
             settings.max_order_per_group,
             settings.max_order_count,
             settings.min_volume,

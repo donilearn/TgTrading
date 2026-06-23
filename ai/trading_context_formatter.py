@@ -11,8 +11,7 @@ def format_analysis_context(
     magic: int,
     global_order_count: int | None = None,
 ) -> str:
-    group_remaining = max(0, settings.max_order_per_group - len(existing_orders))
-    global_remaining = max(0, settings.max_order_count - (global_order_count or len(existing_orders)))
+    group_remaining = max(0, settings.max_order_count - len(existing_orders))
     mode_label = "AGGRESSIVE" if settings.aggressive_mode else "NORMAL"
 
     lines = [
@@ -29,12 +28,10 @@ def format_analysis_context(
         _format_market(market),
         "",
         f"=== LIMITLAR ({mode_label}) ===",
-        f"Shu xabar (1 signal): max {settings.max_orders_per_message} ta yangi entry",
-        f"Guruh jami (barcha xabarlar): max {settings.max_order_per_group} ta | "
+        f"Bitta xabar (1 signal): max {settings.max_order_per_group} ta yangi entry",
+        f"Kanal/guruh jami: max {settings.max_order_count} ta | "
         f"mavjud {len(existing_orders)} | qolgan {group_remaining}",
-        f"Global jami (barcha guruhlar): max {settings.max_order_count} ta | "
-        f"mavjud {global_order_count if global_order_count is not None else '?'} | "
-        f"qolgan {global_remaining if global_order_count is not None else '?'}",
+        f"ORDERS_EXPIRATION: {settings.orders_expiration_minutes} min (limit/stop)",
         f"volume {settings.min_volume}..{settings.max_volume} (default {settings.default_volume})",
     ]
     return "\n".join(lines)

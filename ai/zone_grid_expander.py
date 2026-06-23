@@ -45,13 +45,10 @@ def expand_zone_grid_orders(
         return response
 
     zone_low, zone_high = zone
-    group_remaining = max(0, settings.max_order_per_group - existing_group_count)
-    global_remaining = settings.max_order_count
-    if global_order_count is not None:
-        global_remaining = max(0, settings.max_order_count - global_order_count)
+    channel_remaining = max(0, settings.max_order_count - existing_group_count)
 
-    msg_slots = max(0, settings.max_orders_per_message - len(market_entries))
-    grid_count = min(msg_slots, group_remaining, global_remaining)
+    msg_slots = max(0, settings.max_order_per_group - len(market_entries))
+    grid_count = min(msg_slots, channel_remaining)
 
     if grid_count <= 0:
         return response

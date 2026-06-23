@@ -35,8 +35,8 @@ class TradingPipeline:
         self._analyzer = SignalAnalyzer(self._gemini, settings)
         self._metaapi = MetaApiService(settings)
         self._limit_tracker = OrderLimitTracker(
-            max_orders=settings.max_order_count,
-            max_per_group=settings.max_order_per_group,
+            max_per_channel=settings.max_order_count,
+            max_per_message=settings.max_order_per_group,
         )
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
@@ -87,21 +87,20 @@ class TradingPipeline:
                 bool(message.media),
             )
 
-            existing, market, global_count = await self._context_loader.load(
+            existing, market, _global_count = await self._context_loader.load(
                 magic,
                 message.chat_id,
                 self._settings.group_magic_list,
             )
             logger.info(
-                "Context loaded chat=%s orders=%d global=%d market_symbols=%d",
+                "Context loaded chat=%s orders=%d market_symbols=%d",
                 message.chat_id,
                 len(existing),
-                global_count,
                 len(market),
             )
 
             response = await self._analyzer.analyze(
-                message, context, existing, market, global_count,
+                message, context, existing, market, len(existing),
             )
 
             for item in response.orders:
@@ -136,8 +135,6 @@ class TradingPipeline:
                 message.chat_id,
                 planned,
                 existing_group_count,
-                global_count,
-                self._settings.max_orders_per_message,
             )
             if not allowed:
                 logger.info("Trade skipped: %s", limit_msg)
@@ -188,11 +185,10 @@ class TradingPipeline:
         mode_label = "AGGRESSIVE" if self._settings.aggressive_mode else "NORMAL"
         logger.info(
             "Pipeline started in %s mode (%s) — groups: %s, "
-            "msg max %d, group max %d, global max %d",
+            "msg max %d, channel max %d",
             mode,
             mode_label,
             self._settings.parsed_group_ids,
-            self._settings.max_orders_per_message,
             self._settings.max_order_per_group,
             self._settings.max_order_count,
         )

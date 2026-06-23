@@ -160,7 +160,7 @@ class TradeExecutor:
         chat_id: int,
         magic: int,
     ) -> list[TradeResult]:
-        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, 1)
+        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, 1, 0)
         if not allowed:
             return [TradeResult(success=False, skipped=True, message=limit_msg)]
 
@@ -213,7 +213,7 @@ class TradeExecutor:
     ) -> list[TradeResult]:
         orders = self._order_planner.build(signal)
 
-        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, len(orders))
+        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, len(orders), 0)
         if not allowed:
             return [TradeResult(success=False, skipped=True, message=limit_msg)]
 
