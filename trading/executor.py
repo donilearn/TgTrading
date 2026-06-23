@@ -210,10 +210,13 @@ class TradeExecutor:
         signal: SignalAnalysis,
         chat_id: int,
         magic: int,
+        existing_channel_count: int,
     ) -> list[TradeResult]:
         orders = self._order_planner.build(signal)
 
-        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, len(orders), 0)
+        allowed, limit_msg, _ = self._limit_tracker.can_place(
+            chat_id, len(orders), existing_channel_count,
+        )
         if not allowed:
             return [TradeResult(success=False, skipped=True, message=limit_msg)]
 

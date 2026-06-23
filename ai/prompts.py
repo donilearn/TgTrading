@@ -1,7 +1,6 @@
 def build_system_prompt(
     allowed_symbols: list[str],
     default_symbol: str | None,
-    max_orders_per_message: int,
     max_order_per_group: int,
     max_order_count: int,
     min_volume: float,
