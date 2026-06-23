@@ -13,7 +13,6 @@ def build_analysis_contents(
     existing_orders: list[ExistingOrder],
     market: list[SymbolMarketInfo],
     settings: Settings,
-    global_order_count: int | None = None,
 ) -> list:
     parts: list = []
 
@@ -26,7 +25,6 @@ def build_analysis_contents(
             settings,
             chat_id=message.chat_id,
             magic=magic,
-            global_order_count=global_order_count,
         ),
     ))
 

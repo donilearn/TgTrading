@@ -36,6 +36,7 @@ class TradeExecutor:
         self,
         signal: SignalAnalysis,
         chat_id: int,
+        existing_channel_count: int = 0,
     ) -> list[TradeResult]:
         if not signal.is_actionable:
             return [TradeResult(
@@ -77,9 +78,11 @@ class TradeExecutor:
             return await self._execute_cancel(signal, magic)
 
         if signal.signal_type == SignalType.CLOSE:
-            return await self._execute_close(signal, chat_id, magic)
+            return await self._execute_close(signal, magic)
 
-        return await self._execute_entry(signal, chat_id, magic)
+        return await self._execute_entry(
+            signal, chat_id, magic, existing_channel_count,
+        )
 
     async def _execute_update(
         self,
@@ -157,16 +160,9 @@ class TradeExecutor:
     async def _execute_close(
         self,
         signal: SignalAnalysis,
-        chat_id: int,
         magic: int,
     ) -> list[TradeResult]:
-        allowed, limit_msg, _ = self._limit_tracker.can_place(chat_id, 1, 0)
-        if not allowed:
-            return [TradeResult(success=False, skipped=True, message=limit_msg)]
-
         result = await self._execute_close_order(signal, magic)
-        if result.success and not result.skipped:
-            self._limit_tracker.record(chat_id, 1)
         return [result]
 
     async def _execute_close_order(

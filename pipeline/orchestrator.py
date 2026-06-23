@@ -36,7 +36,7 @@ class TradingPipeline:
         self._metaapi = MetaApiService(settings)
         self._limit_tracker = OrderLimitTracker(
             max_per_channel=settings.max_order_count,
-            max_per_message=settings.max_order_per_group,
+            max_per_message=settings.effective_max_per_message,
         )
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
@@ -100,7 +100,7 @@ class TradingPipeline:
             )
 
             response = await self._analyzer.analyze(
-                message, context, existing, market, len(existing),
+                message, context, existing, market,
             )
 
             for item in response.orders:
@@ -189,7 +189,7 @@ class TradingPipeline:
             mode,
             mode_label,
             self._settings.parsed_group_ids,
-            self._settings.max_order_per_group,
+            self._settings.effective_max_per_message,
             self._settings.max_order_count,
         )
         for chat_id, magic in self._settings.group_magic_by_id.items():

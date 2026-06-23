@@ -30,7 +30,6 @@ class SignalAnalyzer:
             self._allowed_symbols,
             settings.default_symbol,
             settings.max_order_per_group,
-            settings.max_order_per_group,
             settings.max_order_count,
             settings.min_volume,
             settings.max_volume,
@@ -45,7 +44,6 @@ class SignalAnalyzer:
         context: list[ChatMessage],
         existing_orders: list[ExistingOrder],
         market: list[SymbolMarketInfo],
-        global_order_count: int | None = None,
     ) -> AiTradeResponse:
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
@@ -57,7 +55,6 @@ class SignalAnalyzer:
         )
         contents = build_analysis_contents(
             message, context, existing_orders, market, self._settings,
-            global_order_count=global_order_count,
         )
 
         primary_model = self._gemini.model
@@ -89,7 +86,6 @@ class SignalAnalyzer:
                 result,
                 self._settings,
                 len(existing_orders),
-                global_order_count,
                 message_text=message.text,
                 market=market,
             )

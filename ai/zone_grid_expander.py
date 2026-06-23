@@ -18,7 +18,6 @@ def expand_zone_grid_orders(
     response: AiTradeResponse,
     settings: Settings,
     existing_group_count: int,
-    global_order_count: int | None = None,
     message_text: str | None = None,
     market: list[SymbolMarketInfo] | None = None,
 ) -> AiTradeResponse:
@@ -47,7 +46,7 @@ def expand_zone_grid_orders(
     zone_low, zone_high = zone
     channel_remaining = max(0, settings.max_order_count - existing_group_count)
 
-    msg_slots = max(0, settings.max_order_per_group - len(market_entries))
+    msg_slots = max(0, settings.effective_max_per_message - len(market_entries))
     grid_count = min(msg_slots, channel_remaining)
 
     if grid_count <= 0:

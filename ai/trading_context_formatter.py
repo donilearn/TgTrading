@@ -9,7 +9,6 @@ def format_analysis_context(
     settings: Settings,
     chat_id: int,
     magic: int,
-    global_order_count: int | None = None,
 ) -> str:
     group_remaining = max(0, settings.max_order_count - len(existing_orders))
     mode_label = "AGGRESSIVE" if settings.aggressive_mode else "NORMAL"
@@ -28,7 +27,8 @@ def format_analysis_context(
         _format_market(market),
         "",
         f"=== LIMITLAR ({mode_label}) ===",
-        f"Bitta xabar (1 signal): max {settings.max_order_per_group} ta yangi entry",
+        f"Bitta xabar (1 signal): max {settings.effective_max_per_message} ta yangi entry "
+        f"({mode_label}: {settings.max_orders_per_message}, env max {settings.max_order_per_group})",
         f"Kanal/guruh jami: max {settings.max_order_count} ta | "
         f"mavjud {len(existing_orders)} | qolgan {group_remaining}",
         f"ORDERS_EXPIRATION: {settings.orders_expiration_minutes} min (limit/stop)",

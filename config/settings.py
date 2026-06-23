@@ -57,6 +57,11 @@ class Settings(BaseSettings):
         return NORMAL_ORDERS_PER_MESSAGE
 
     @property
+    def effective_max_per_message(self) -> int:
+        """Rejim (2/5) va env MAX_ORDER_PER_GROUP dan qattiqroq limit."""
+        return min(self.max_orders_per_message, self.max_order_per_group)
+
+    @property
     def group_magic_list(self) -> list[int]:
         return list(self.group_magic_by_id.values())
 
