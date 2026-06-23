@@ -36,7 +36,7 @@ class TradingContextLoader:
                 chat_id,
                 magic,
             )
-            await self._recover_connection()
+            await self._metaapi.recover_after_timeout()
             return await asyncio.wait_for(
                 self._load_once(magic),
                 timeout=_META_CONTEXT_TIMEOUT,
@@ -47,11 +47,3 @@ class TradingContextLoader:
         existing = await self._existing_orders.fetch(self._metaapi.connection, magic)
         market = await self._market_context.build(self._metaapi.connection, existing)
         return existing, market
-
-    async def _recover_connection(self) -> None:
-        try:
-            await self._metaapi.reconnect_rpc()
-        except Exception:
-            logger.exception("MetaAPI RPC reconnect failed, full reconnect")
-            await self._metaapi.disconnect()
-            await self._metaapi.connect()
