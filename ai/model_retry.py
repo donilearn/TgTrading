@@ -34,6 +34,8 @@ def generate_with_fallback(
                 )
                 if model != primary_model:
                     logger.warning("Primary model unavailable, used fallback: %s", model)
+                else:
+                    logger.info("Gemini response OK model=%s", model)
                 return response
 
             except errors.APIError as exc:

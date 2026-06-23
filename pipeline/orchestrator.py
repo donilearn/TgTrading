@@ -14,6 +14,7 @@ from trading.client import MetaApiService
 from trading.existing_orders_service import ExistingOrdersService
 from trading.market_context_service import MarketContextService
 from trading.order_limit_tracker import OrderLimitTracker
+from trading.trading_context_loader import TradingContextLoader
 from pipeline.shutdown_handler import ShutdownHandler
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,11 @@ class TradingPipeline:
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
         self._market_context = MarketContextService(settings)
+        self._context_loader = TradingContextLoader(
+            self._metaapi,
+            self._existing_orders,
+            self._market_context,
+        )
         self._message_buffer = MessageBuffer(
             max_size=settings.context_message_count,
         )
@@ -73,12 +79,22 @@ class TradingPipeline:
     ) -> None:
         try:
             magic = self._settings.get_group_magic(message.chat_id)
-            existing = await self._existing_orders.fetch(
-                self._metaapi.connection, magic,
+            logger.info(
+                "Processing message chat=%s magic=%s text=%r media=%s",
+                message.chat_id,
+                magic,
+                (message.text or "")[:120],
+                bool(message.media),
             )
-            market = await self._market_context.build(
-                self._metaapi.connection, existing,
+
+            existing, market = await self._context_loader.load(magic, message.chat_id)
+            logger.info(
+                "Context loaded chat=%s orders=%d market_symbols=%d",
+                message.chat_id,
+                len(existing),
+                len(market),
             )
+
             response = await self._analyzer.analyze(
                 message, context, existing, market,
             )

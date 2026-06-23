@@ -3,6 +3,7 @@ import logging
 
 from google.genai import types
 
+from ai.request_logger import log_gemini_error, log_gemini_request, log_gemini_response
 from ai.client import GeminiClient
 from ai.content_builder import build_analysis_contents
 from ai.model_retry import generate_with_fallback
@@ -53,21 +54,33 @@ class SignalAnalyzer:
             message, context, existing_orders, market, self._settings,
         )
 
+        primary_model = self._gemini.model
+        log_gemini_request(
+            message.chat_id,
+            primary_model,
+            contents,
+            len(self._system_prompt),
+        )
+
         try:
             response = await asyncio.to_thread(
                 generate_with_fallback,
                 self._gemini.client,
-                self._gemini.model,
+                primary_model,
                 self._settings.parsed_fallback_models,
                 contents,
                 config,
             )
+
+            used_model = _response_model(response, primary_model)
+            log_gemini_response(message.chat_id, used_model, response)
 
             result = response.parsed or AiTradeResponse.model_validate_json(response.text)
             result = self._validate_symbol(result)
             return result
 
         except Exception as exc:
+            log_gemini_error(message.chat_id, primary_model, exc)
             logger.error("Gemini analysis failed: %s", exc)
             return AiTradeResponse(
                 is_signal=False,
@@ -87,3 +100,10 @@ class SignalAnalyzer:
 
         result.symbol = resolved
         return result
+
+
+def _response_model(response, default: str) -> str:
+    model_version = getattr(response, "model_version", None)
+    if model_version:
+        return str(model_version)
+    return default
