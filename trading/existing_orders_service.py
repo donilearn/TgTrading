@@ -3,6 +3,7 @@ from typing import Any
 
 from models.existing_order import ExistingOrder
 from trading.magic_matcher import matches_magic
+from trading.metaapi_trading_snapshot import MetaApiTradingSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -12,25 +13,57 @@ _SELL_TYPES = {"POSITION_TYPE_SELL", "ORDER_TYPE_SELL", "ORDER_TYPE_SELL_LIMIT",
 
 class ExistingOrdersService:
     async def fetch(self, connection: Any, magic: int) -> list[ExistingOrder]:
+        positions = await connection.get_positions()
+        orders = await connection.get_orders()
+        snapshot = MetaApiTradingSnapshot(
+            positions=list(positions or []),
+            orders=list(orders or []),
+        )
+        return self.from_snapshot(snapshot, magic)
+
+    def from_snapshot(
+        self,
+        snapshot: MetaApiTradingSnapshot,
+        magic: int,
+    ) -> list[ExistingOrder]:
         orders: list[ExistingOrder] = []
 
-        for raw in await connection.get_positions():
+        for raw in snapshot.positions:
             if not matches_magic(raw, magic):
                 continue
             orders.append(self._from_position(raw))
 
-        for raw in await connection.get_orders():
+        for raw in snapshot.orders:
             if not matches_magic(raw, magic):
                 continue
             orders.append(self._from_pending(raw))
 
         return orders
 
-    async def fetch_global_count(self, connection, magics: list[int]) -> int:
+    def count_for_magics(
+        self,
+        snapshot: MetaApiTradingSnapshot,
+        magics: list[int],
+    ) -> int:
+        """Bitta snapshot dan barcha guruhlar order sonini hisoblaydi."""
         total = 0
         for magic in magics:
-            total += len(await self.fetch(connection, magic))
+            total += sum(
+                1 for raw in snapshot.positions if matches_magic(raw, magic)
+            )
+            total += sum(
+                1 for raw in snapshot.orders if matches_magic(raw, magic)
+            )
         return total
+
+    async def fetch_global_count(self, connection, magics: list[int]) -> int:
+        positions = await connection.get_positions()
+        orders = await connection.get_orders()
+        snapshot = MetaApiTradingSnapshot(
+            positions=list(positions or []),
+            orders=list(orders or []),
+        )
+        return self.count_for_magics(snapshot, magics)
 
     def _from_position(self, raw: dict) -> ExistingOrder:
         return ExistingOrder(

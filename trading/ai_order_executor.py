@@ -114,24 +114,24 @@ class AiOrderExecutor:
             if action_type == "entry":
                 return await run_trade_with_retry(
                     metaapi,
-                    lambda: self._execute_entry(
-                        metaapi.connection, response, action, volume, magic, index,
+                    lambda conn: self._execute_entry(
+                        conn, response, action, volume, magic, index,
                     ),
                 )
             if action_type == "modify":
                 return await run_trade_with_retry(
                     metaapi,
-                    lambda: self._execute_modify(metaapi.connection, action, existing),
+                    lambda conn: self._execute_modify(conn, action, existing),
                 )
             if action_type == "close":
                 return await run_trade_with_retry(
                     metaapi,
-                    lambda: self._execute_close(metaapi.connection, action, existing),
+                    lambda conn: self._execute_close(conn, action, existing),
                 )
             if action_type == "cancel":
                 return await run_trade_with_retry(
                     metaapi,
-                    lambda: self._execute_cancel(metaapi.connection, action, existing),
+                    lambda conn: self._execute_cancel(conn, action, existing),
                 )
 
             return TradeResult(

@@ -6,6 +6,7 @@ from models.symbol_market_info import SymbolMarketInfo
 from trading.client import MetaApiService
 from trading.existing_orders_service import ExistingOrdersService
 from trading.market_context_service import MarketContextService
+from trading.metaapi_trading_snapshot import MetaApiTradingSnapshotService
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,17 @@ class TradingContextLoader:
         self._metaapi = metaapi
         self._existing_orders = existing_orders
         self._market_context = market_context
+        self._snapshot = MetaApiTradingSnapshotService()
 
-    async def load(self, magic: int, chat_id: int) -> tuple[list[ExistingOrder], list[SymbolMarketInfo]]:
+    async def load(
+        self,
+        magic: int,
+        chat_id: int,
+        group_magics: list[int],
+    ) -> tuple[list[ExistingOrder], list[SymbolMarketInfo], int]:
         try:
             return await asyncio.wait_for(
-                self._load_once(magic),
+                self._load_once(magic, group_magics),
                 timeout=_META_CONTEXT_TIMEOUT,
             )
         except TimeoutError:
@@ -38,12 +45,23 @@ class TradingContextLoader:
             )
             await self._metaapi.recover_after_timeout()
             return await asyncio.wait_for(
-                self._load_once(magic),
+                self._load_once(magic, group_magics),
                 timeout=_META_CONTEXT_TIMEOUT,
             )
 
-    async def _load_once(self, magic: int) -> tuple[list[ExistingOrder], list[SymbolMarketInfo]]:
-        await self._metaapi.ensure_ready()
-        existing = await self._existing_orders.fetch(self._metaapi.connection, magic)
-        market = await self._market_context.build(self._metaapi.connection, existing)
-        return existing, market
+    async def _load_once(
+        self,
+        magic: int,
+        group_magics: list[int],
+    ) -> tuple[list[ExistingOrder], list[SymbolMarketInfo], int]:
+        async def load_op(connection):
+            snapshot = await self._snapshot.fetch(connection)
+            existing = self._existing_orders.from_snapshot(snapshot, magic)
+            market = await self._market_context.build(connection, existing)
+            global_count = self._existing_orders.count_for_magics(
+                snapshot,
+                group_magics,
+            )
+            return existing, market, global_count
+
+        return await self._metaapi.run_rpc(load_op)

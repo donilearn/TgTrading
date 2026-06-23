@@ -87,9 +87,9 @@ class TradingPipeline:
                 bool(message.media),
             )
 
-            existing, market = await self._context_loader.load(magic, message.chat_id)
-            global_count = await self._existing_orders.fetch_global_count(
-                self._metaapi.connection,
+            existing, market, global_count = await self._context_loader.load(
+                magic,
+                message.chat_id,
                 self._settings.group_magic_list,
             )
             logger.info(
