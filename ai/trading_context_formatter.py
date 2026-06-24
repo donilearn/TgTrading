@@ -58,6 +58,7 @@ def _format_orders(
         rows.append(
             f"orderNumber={item.order_number} | groupId={chat_id} | magic={magic} | "
             f"openTime={item.open_time} | openPrice={item.open_price} | "
+            f"volume={item.volume} | "
             f"SL={item.stop_loss} | TP={item.take_profit} | "
             f"side={item.side} | orderType={item.order_type} | symbol={item.symbol} | "
             f"isPosition={item.is_position}"

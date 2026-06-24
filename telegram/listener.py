@@ -5,7 +5,7 @@ from telethon import events
 
 from models.chat_message import ChatMessage
 from telegram.client import TelegramService
-from telegram.media_extractor import build_chat_message
+from telegram.media_extractor import build_chat_message, build_sender_info
 from telegram.message_buffer import MessageBuffer
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,10 @@ class MessageListener:
         @client.on(events.NewMessage(chats=self._group_ids))
         async def handler(event: events.NewMessage.Event) -> None:
             chat_id = event.chat_id
-            sender = "unknown"
-
-            if event.sender:
-                sender = (
-                    getattr(event.sender, "username", None)
-                    or str(getattr(event.sender, "id", "unknown"))
-                )
+            sender, sender_id, sender_display = await build_sender_info(
+                client,
+                event.message,
+            )
 
             context = self._buffer.get_context(chat_id)
 
@@ -47,6 +44,8 @@ class MessageListener:
                 event.message,
                 chat_id,
                 sender,
+                sender_id=sender_id,
+                sender_display=sender_display,
             )
 
             media_tag = f" +{message.media.media_type}" if message.media else ""

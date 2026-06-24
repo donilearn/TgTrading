@@ -14,6 +14,7 @@ from trading.client_id import build_trade_options
 from trading.order_expiration_builder import apply_pending_order_expiration
 from trading.error_formatter import format_trade_error
 from trading.order_router import OrderRouter
+from trading.partial_close_handler import resolve_close_volume
 from trading.price_normalizer import normalize_price
 from trading.symbol_spec_cache import SymbolSpecCache
 from trading.trade_retry import run_trade_with_retry
@@ -77,13 +78,20 @@ class AiOrderExecutor:
         return results
 
     def count_planned_orders(self, response: AiTradeResponse) -> int:
+        return self.count_entry_orders(response) + self.count_management_orders(response)
+
+    def count_entry_orders(self, response: AiTradeResponse) -> int:
         total = 0
         for action in response.orders:
             if action.action_type.lower() == "entry":
                 total += max(1, action.count_order)
-            else:
-                total += 1
         return total
+
+    def count_management_orders(self, response: AiTradeResponse) -> int:
+        return sum(
+            1 for action in response.orders
+            if action.action_type.lower() != "entry"
+        )
 
     async def _execute_one(
         self,
@@ -253,9 +261,43 @@ class AiOrderExecutor:
                 message=f"Position #{action.count_order} not found",
             )
 
+        close_mode, close_volume = resolve_close_volume(
+            action.volume,
+            target,
+            self._settings.min_volume,
+        )
+
+        if close_mode == "too_small":
+            return TradeResult(
+                success=False,
+                skipped=True,
+                symbol=target.symbol,
+                action="close",
+                message=(
+                    f"Partial close #{action.count_order} too small "
+                    f"(vol={action.volume}, min={self._settings.min_volume})"
+                ),
+            )
+
+        if close_mode == "partial" and close_volume is not None:
+            spec = await self._spec_cache.get(connection, target.symbol)
+            close_volume = _round_volume_for_spec(close_volume, spec)
+            await connection.close_position_partially(
+                position_id=target.order_number,
+                volume=close_volume,
+            )
+            return TradeResult(
+                success=True,
+                symbol=target.symbol,
+                action="close",
+                volume=close_volume,
+                message=f"Partially closed #{action.count_order} vol={close_volume}",
+            )
+
         await connection.close_position(position_id=target.order_number)
         return TradeResult(
             success=True, symbol=target.symbol, action="close",
+            volume=target.volume,
             message=f"Closed #{action.count_order}",
         )
 

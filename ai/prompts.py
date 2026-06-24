@@ -71,7 +71,29 @@ Rejim: {mode_label}
 MAX_ORDER_PER_GROUP={max_order_per_group} — bitta TG xabar (1 signal) uchun max yangi entry
 MAX_ORDER_COUNT={max_order_count} — bitta Telegram kanal/guruh doirasida jami max ochiq order
 ORDERS_EXPIRATION={orders_expiration_minutes} min — limit/stop pending orderlar uchun
-CONTEXT: oxirgi xabarlar history sifatida beriladi
+CONTEXT: oxirgi xabarlar history sifatida beriladi — har birida message_id, vaqt, yuboruvchi, reply, forward, matn bor
+
+=== TELEGRAM XABAR KONTEKSTI ===
+Har bir xabar TO'LIQ metadata bilan keladi: message_id, chat_id, vaqt, yuboruvchi, sender_id,
+reply (javob berilgan xabar matni), forward, kanal post, entities (url/mention).
+Oxirgi xabarlar eskidan yangiga tartibda — holatni shu zanjir bo'yicha bahola.
+
+REPLY muhim:
+- Joriy xabar reply bo'lsa — REPLY matnini o'qi: asl signal u yerda bo'lishi mumkin
+- Joriy xabar faqat reply ga izoh bo'lishi mumkin ("kuting", "BE", "yoping", "TP1 hit")
+- Reply + qisqa matn → avval reply kontekstini signal bilan solishtir
+
+=== SIGNAL EMAS (is_signal=false) ===
+Quyidagilar trade signal EMAS — reklama, spam, suhbat:
+- Broker/kanal reklama, promokod, referral, "obuna bo'ling", giveaway, cashback
+- Reklama havolalari (url, @kanal taklif), boshqa loyiha/bot reklama
+- Forward qilingan reklama yoki promo post
+- reply_matnda Reklama havolalari (url, @kanal taklif) yoki boshqa loyiha/bot reklama bo'lsa — is_signal=false
+- Umumiy suhbat, kulgi, emoji, shaxsiy fikr, signal bilan bog'liq bo'lmagan gap
+- Faqat narx/emoji bo'lgan lekin SL/TP/yo'nalish/buyruq yo'q va kontekstda signal yo'q
+- "VIP", "premium", "kurs", "mentor", "copy link" kabi marketing matnlar
+- Agar msg.da rasm keltirilib, unda mavjud orderlar, SL va TP levellari ko'rsatilgan bo'lsa, rasmning vaqti va currrent price levelni inobatga olib order ochish kerak, ya'ni postfactum rasmda vaqt va price joriy real holatga mos kelmasa, signal=false.
+Agar shubha bo'lsa — is_signal=false, reasoning da nima uchun signal emasligini yoz. 
 
 === GURUH (TELEGRAM_GROUP_IDS) ===
 Har bir chat_id alohida kanal/guruh; magic = broker identifikatori
@@ -100,11 +122,31 @@ TYPE 4: dalivka, qayta kirish, yangi/boshqa zona, add, reentry, DCA va o'xshash
 TYPE 4 — zone xabarda bor bo'lsa → yuqoridagi zone qoidalariga o't (TYPE 3 bilan bir xil)
 
 === ORDER BOSHQARISH (sync) ===
-Telegram xabarlarni faqat trade signal sifatida tahlil qil — open/close/modify ni o'zing tanla
-"TP hit", "TP1 hit", "TP2 done", "SL hit", "stopped", "done", "close", "yoping" → type=close yoki modify
-Hisobot ("men yopdim", "profit oldim") vs buyruq ("yoping", "BE qiling") — ajrat; buyruq bo'lsa action ber
-"wait", "kuting", "hozir kirmang" → is_signal=false
-Mavjud orderlarni kontekst + history bilan solishtir; qaysi orderNumber ga tegishli ekanini aniqlab countOrder ber
+Telegram xabarlarni trade signal sifatida tahlil qil — open/close/modify ni o'zing tanla.
+Bu blok yangi entry emas — mavjud orderlarni boshqarish.
+
+SAVE / BE / QISMAN SAVE (muhim — noto'g'ri talqin qilma):
+- "save", "BE", "breakeven", "b/u", "bez ubitka", "qisman save", "partial save" → yangi entry EMAS
+- "qisman save" = avtomatik 50% close EMAS; bu buyruq emas
+- Odatda: type=modify, sl = openPrice (breakeven) — profit himoya qilish
+- Yoki vaziyatga qarab qisman close: type=close + volume (position volume dan kichik)
+- Agar position volume = min lot (masalan 0.01) bo'lsa qisman close mumkin emas → modify BE tanla
+- Qaysi order(lar)ga tegish: reply, kontekst, profit holati, kanal uslubiga qarab o'zing tanla
+- Hamma ochiq pozitsiyani to'liq yopma — faqat xabar aniq "close all", "yoping", "hammasini yop" desa
+- "50%", "yarmini", "half" aniq aytilsa → shu order(lar)da qisman close (volume belgilab)
+- save/BE xabari TYPE 2 entry qoidasi emas — market ochma
+
+TP / SL / CLOSE:
+- "TP hit", "TP1 hit", "TP2 done", "SL hit", "stopped", "done" → type=close yoki modify
+- "close", "yoping" (aniq buyruq) → type=close
+- Hisobot ("men yopdim", "profit oldim") vs buyruq — ajrat; faqat buyruq bo'lsa action ber
+- "wait", "kuting", "hozir kirmang" → is_signal=false
+- Mavjud orderlarni kontekst + history bilan solishtir; countOrder = orderNumber
+
+MODIFY misollari:
+- Breakeven: {{"type":"modify","countOrder":<orderNumber>,"sl":<openPrice>,"tp":null}}
+- Qisman close: {{"type":"close","countOrder":<orderNumber>,"volume":0.005}} (position volume dan kichik)
+- To'liq close: {{"type":"close","countOrder":<orderNumber>}} (volume qo'yma)
 
 === TEXNIK QOIDALAR ===
 Zone = ikki chegarali oraliq ("4205–4102", "4105🛍4102", chart zona)
@@ -154,6 +196,8 @@ JAVOB — faqat JSON:
 type: entry | modify | close | cancel
 entry → countOrder=1 (har order alohida element)
 modify/close/cancel → countOrder=orderNumber
+close + volume → qisman yopish (volume position hajmidan kichik); volume yo'q → to'liq yopish
+modify + sl=openPrice → breakeven (save/BE)
 market entry → price null; expirationMinutes qo'yma
 limit/stop → expirationMinutes={orders_expiration_minutes}
 Signal bo'lmasa: is_signal=false, orders=[]

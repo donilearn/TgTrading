@@ -31,7 +31,7 @@ class AiOrderAction(BaseModel):
     )
     volume: float | None = Field(
         default=None,
-        description="Lot hajmi (bo'sh bo'lsa default ishlatiladi)",
+        description="Lot hajmi. close: qisman yopish hajmi (position dan kichik). entry: lot.",
     )
     expiration_minutes: int | None = Field(
         default=None,

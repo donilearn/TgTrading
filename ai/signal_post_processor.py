@@ -122,7 +122,14 @@ def normalize_pip_fields(
 
 
 def _build_combined_text(message: ChatMessage, context: list[ChatMessage]) -> str:
-    parts = [msg.text for msg in context if msg.text]
+    parts: list[str] = []
+    for msg in context:
+        if msg.reply_to and msg.reply_to.text:
+            parts.append(f"reply:{msg.reply_to.text}")
+        if msg.text:
+            parts.append(msg.text)
+    if message.reply_to and message.reply_to.text:
+        parts.append(f"reply:{message.reply_to.text}")
     if message.text:
         parts.append(message.text)
     return " ".join(parts)

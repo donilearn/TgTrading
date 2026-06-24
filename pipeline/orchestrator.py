@@ -12,7 +12,7 @@ from telegram.message_buffer import MessageBuffer
 from trading.ai_order_executor import AiOrderExecutor
 from trading.client import MetaApiService
 from trading.existing_orders_service import ExistingOrdersService
-from trading.market_context_service import MarketContextService
+from trading.metaapi_connection_keeper import MetaApiConnectionKeeper
 from trading.order_limit_tracker import OrderLimitTracker
 from trading.trading_context_loader import TradingContextLoader
 from pipeline.shutdown_handler import ShutdownHandler
@@ -34,17 +34,18 @@ class TradingPipeline:
         self._gemini = GeminiClient(settings)
         self._analyzer = SignalAnalyzer(self._gemini, settings)
         self._metaapi = MetaApiService(settings)
+        self._metaapi_keeper = MetaApiConnectionKeeper(self._metaapi)
+        self._metaapi.attach_keeper(self._metaapi_keeper)
         self._limit_tracker = OrderLimitTracker(
             max_per_channel=settings.max_order_count,
             max_per_message=settings.effective_max_per_message,
         )
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
-        self._market_context = MarketContextService(settings)
         self._context_loader = TradingContextLoader(
             self._metaapi,
             self._existing_orders,
-            self._market_context,
+            settings,
         )
         self._message_buffer = MessageBuffer(
             max_size=settings.context_message_count,
@@ -129,18 +130,23 @@ class TradingPipeline:
             if not response.is_actionable:
                 return
 
-            planned = self._executor.count_planned_orders(response)
+            planned_entries = self._executor.count_entry_orders(response)
             existing_group_count = len(existing)
-            allowed, limit_msg, to_place = self._limit_tracker.can_place(
-                message.chat_id,
-                planned,
-                existing_group_count,
-            )
-            if not allowed:
-                logger.info("Trade skipped: %s", limit_msg)
-                return
-            if limit_msg:
-                logger.info("Trade capped: %s", limit_msg)
+
+            if planned_entries > 0:
+                allowed, limit_msg, to_place = self._limit_tracker.can_place(
+                    message.chat_id,
+                    planned_entries,
+                    existing_group_count,
+                )
+                if not allowed:
+                    logger.info("Trade skipped: %s", limit_msg)
+                    return
+                if limit_msg:
+                    logger.info("Trade capped: %s", limit_msg)
+            else:
+                to_place = None
+                limit_msg = ""
 
             results = await self._executor.execute(
                 self._metaapi,
@@ -151,11 +157,14 @@ class TradingPipeline:
             )
 
             success_count = 0
+            entries_placed = 0
             for result in results:
                 if result.skipped:
                     logger.info("Trade skipped: %s", result.message)
                 elif result.success:
                     success_count += 1
+                    if result.action not in ("close", "cancel", "modify"):
+                        entries_placed += 1
                     logger.info(
                         "Trade OK: %s %s vol=%.2f — %s",
                         result.action,
@@ -166,8 +175,8 @@ class TradingPipeline:
                 else:
                     logger.error("Trade failed: %s", result.message)
 
-            if success_count:
-                self._limit_tracker.record(message.chat_id, success_count)
+            if entries_placed:
+                self._limit_tracker.record(message.chat_id, entries_placed)
 
         except Exception:
             logger.exception(
@@ -179,6 +188,10 @@ class TradingPipeline:
     async def start(self) -> None:
         await self._telegram.start()
         await self._metaapi.connect()
+        await self._metaapi.subscribe_market_data(
+            self._settings.parsed_allowed_symbols,
+        )
+        self._metaapi_keeper.start()
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"
@@ -245,6 +258,7 @@ class TradingPipeline:
         self._shutting_down = True
 
         await self._wait_for_inflight_handlers()
+        await self._metaapi_keeper.stop()
         await self._telegram.stop()
         await self._metaapi.disconnect()
         logger.info("Pipeline stopped")
