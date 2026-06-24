@@ -45,7 +45,7 @@ async def run_trade_with_retry(
                 max_retries,
                 exc,
             )
-            metaapi.request_reconnect()
+            await metaapi.reconnect_all()
             await metaapi.ensure_rpc_ready()
             await asyncio.sleep(base_delay * (attempt + 1))
 
