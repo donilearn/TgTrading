@@ -51,6 +51,8 @@ class MetaApiService:
         self._account = None
         self._streaming_connection = None
         self._rpc_connection = None
+        # Lock ordering: always _lifecycle_lock before _rpc_lock.
+        # Never call reconnect_all() while holding _rpc_lock.
         self._lifecycle_lock = asyncio.Lock()
         self._rpc_lock = asyncio.Lock()
         self._streaming_ready = asyncio.Event()
@@ -140,9 +142,11 @@ class MetaApiService:
                 if not _is_retryable(exc):
                     raise
                 logger.warning("MetaAPI RPC error, reconnecting: %s", exc)
-                await self.reconnect_all()
-                await self.ensure_rpc_ready()
-                return await operation(self.connection)
+
+        await self.reconnect_all()
+        await self.ensure_rpc_ready()
+        async with self._rpc_lock:
+            return await operation(self.connection)
 
     async def check_health(self) -> bool:
         if not self._streaming_ready.is_set():
