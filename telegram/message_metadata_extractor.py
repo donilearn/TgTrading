@@ -32,7 +32,17 @@ async def extract_reply(client: TelegramClient, message: Message) -> MessageRepl
             text="(reply xabar olinmadi)",
         )
 
-    reply_sender, _, reply_display = resolve_sender(await reply_msg.get_sender())
+    try:
+        entity = await reply_msg.get_sender()
+    except Exception:
+        logger.debug(
+            "Failed to resolve reply sender for message %s",
+            reply_msg.id,
+            exc_info=True,
+        )
+        entity = reply_msg.sender
+
+    reply_sender, _, reply_display = resolve_sender(entity)
     sender_label = _sender_label(reply_sender, reply_display)
 
     return MessageReply(

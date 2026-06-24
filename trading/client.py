@@ -16,6 +16,7 @@ _RECONNECT_SETTLE_SEC = 2.0
 _CONNECT_RETRY_DELAY_SEC = 5.0
 _MAX_CONNECT_ATTEMPTS = 6
 _SYNC_TIMEOUT_SEC = 300.0
+_WAIT_READY_TIMEOUT_SEC = 45.0
 
 
 def _is_rate_limited(exc: Exception) -> bool:
@@ -97,10 +98,18 @@ class MetaApiService:
             await self._connect_all_inner()
 
     async def ensure_streaming_ready(self) -> None:
-        await self._wait_until_ready(self._streaming_ready, "streaming")
+        await self._wait_until_ready(
+            self._streaming_ready,
+            "streaming",
+            timeout=_WAIT_READY_TIMEOUT_SEC,
+        )
 
     async def ensure_rpc_ready(self) -> None:
-        await self._wait_until_ready(self._rpc_ready, "RPC")
+        await self._wait_until_ready(
+            self._rpc_ready,
+            "RPC",
+            timeout=_WAIT_READY_TIMEOUT_SEC,
+        )
 
     async def run_rpc(
         self,
@@ -189,12 +198,26 @@ class MetaApiService:
             await self._reset_websocket_client()
             logger.info("MetaAPI disconnected")
 
-    async def _wait_until_ready(self, event: asyncio.Event, label: str) -> None:
+    async def _wait_until_ready(
+        self,
+        event: asyncio.Event,
+        label: str,
+        timeout: float = _WAIT_READY_TIMEOUT_SEC,
+    ) -> None:
         if event.is_set():
             return
 
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
         logged = False
+
         while not event.is_set():
+            if loop.time() >= deadline:
+                self.request_reconnect()
+                raise TimeoutError(
+                    f"MetaAPI {label} connection not ready within {timeout:.0f}s",
+                )
+
             if self._reconnect_requested.is_set() and self._keeper is not None:
                 self._keeper.request_reconnect()
 
@@ -202,6 +225,7 @@ class MetaApiService:
                 logger.info("Waiting for MetaAPI %s connection...", label)
                 logged = True
 
+            remaining = max(0.1, deadline - loop.time())
             wait_tasks = [
                 asyncio.create_task(event.wait(), name=f"metaapi-{label}-ready"),
                 asyncio.create_task(
@@ -211,6 +235,7 @@ class MetaApiService:
             ]
             done, pending = await asyncio.wait(
                 wait_tasks,
+                timeout=min(remaining, 5.0),
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
@@ -219,6 +244,9 @@ class MetaApiService:
 
             if event.is_set():
                 return
+
+            if not done:
+                continue
 
             await asyncio.sleep(0.5)
 
