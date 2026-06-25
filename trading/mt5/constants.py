@@ -1,0 +1,4 @@
+# MQL5 SYMBOL_FILLING_* bitmask — Python MetaTrader5 modulida yo'q.
+SYMBOL_FILLING_FOK = 1
+SYMBOL_FILLING_IOC = 2
+SYMBOL_FILLING_RETURN = 4

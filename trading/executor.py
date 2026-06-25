@@ -260,9 +260,7 @@ class TradeExecutor:
             )
 
         try:
-            options = build_trade_options(
-                symbol, index, magic, signal.is_re_entry,
-            )
+            options = build_trade_options(magic, "TG", None)
             options = apply_pending_order_expiration(
                 options,
                 order_type,

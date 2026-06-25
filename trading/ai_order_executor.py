@@ -40,6 +40,8 @@ class AiOrderExecutor:
         magic: int,
         existing: list[ExistingOrder],
         max_entries: int | None = None,
+        channel_name: str = "",
+        message_time: str | None = None,
     ) -> list[TradeResult]:
         if not response.is_actionable:
             return [TradeResult(
@@ -63,6 +65,7 @@ class AiOrderExecutor:
                 result = await self._execute_one(
                     trading, response, action, magic,
                     existing, entry_index,
+                    channel_name, message_time,
                 )
                 results.append(result)
                 if action_type == "entry":
@@ -101,6 +104,8 @@ class AiOrderExecutor:
         magic: int,
         existing: list[ExistingOrder],
         index: int,
+        channel_name: str = "",
+        message_time: str | None = None,
     ) -> TradeResult:
         symbol = response.symbol or ""
         action_type = action.action_type.lower()
@@ -124,6 +129,7 @@ class AiOrderExecutor:
                     trading,
                     lambda conn: self._execute_entry(
                         conn, response, action, volume, magic, index,
+                        channel_name, message_time,
                     ),
                 )
             if action_type == "modify":
@@ -134,7 +140,9 @@ class AiOrderExecutor:
             if action_type == "close":
                 return await run_trade_with_retry(
                     trading,
-                    lambda conn: self._execute_close(conn, action, existing),
+                    lambda conn: self._execute_close(
+                        conn, action, existing, channel_name, message_time,
+                    ),
                 )
             if action_type == "cancel":
                 return await run_trade_with_retry(
@@ -166,6 +174,8 @@ class AiOrderExecutor:
         volume: float,
         magic: int,
         index: int,
+        channel_name: str = "",
+        message_time: str | None = None,
     ) -> TradeResult:
         symbol = response.symbol or ""
         side = _parse_side(response.side)
@@ -189,7 +199,7 @@ class AiOrderExecutor:
             stop_loss=stop_loss,
             volume=volume,
         )
-        options = build_trade_options(symbol, index, magic, False)
+        options = build_trade_options(magic, channel_name, message_time)
         options = apply_pending_order_expiration(
             options,
             order_type,
@@ -253,13 +263,36 @@ class AiOrderExecutor:
         connection: Any,
         action: AiOrderAction,
         existing: list[ExistingOrder],
+        channel_name: str = "",
+        message_time: str | None = None,
     ) -> TradeResult:
         target = _find_order(existing, str(action.count_order))
-        if target is None or not target.is_position:
+        if target is None:
             return TradeResult(
                 success=False, skipped=True,
-                message=f"Position #{action.count_order} not found",
+                message=f"Order #{action.count_order} not found",
             )
+
+        # Pending limit/stop → close = cancel (AI ko'pincha type=close yuboradi)
+        if not target.is_position:
+            if action.volume is not None:
+                return TradeResult(
+                    success=False,
+                    skipped=True,
+                    symbol=target.symbol,
+                    action="cancel",
+                    message=(
+                        f"Pending order #{action.count_order} — "
+                        "qisman yopish mumkin emas, faqat cancel"
+                    ),
+                )
+            await connection.cancel_order(order_id=target.order_number)
+            return TradeResult(
+                success=True, symbol=target.symbol, action="cancel",
+                message=f"Cancelled pending #{action.count_order}",
+            )
+
+        comment = build_trade_options(0, channel_name, message_time)["comment"]
 
         close_mode, close_volume = resolve_close_volume(
             action.volume,
@@ -285,6 +318,7 @@ class AiOrderExecutor:
             await connection.close_position_partially(
                 position_id=target.order_number,
                 volume=close_volume,
+                comment=comment,
             )
             return TradeResult(
                 success=True,
@@ -294,7 +328,10 @@ class AiOrderExecutor:
                 message=f"Partially closed #{action.count_order} vol={close_volume}",
             )
 
-        await connection.close_position(position_id=target.order_number)
+        await connection.close_position(
+            position_id=target.order_number,
+            comment=comment,
+        )
         return TradeResult(
             success=True, symbol=target.symbol, action="close",
             volume=target.volume,

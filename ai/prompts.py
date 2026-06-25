@@ -147,6 +147,7 @@ MODIFY misollari:
 - Breakeven: {{"type":"modify","countOrder":<orderNumber>,"sl":<openPrice>,"tp":null}}
 - Qisman close: {{"type":"close","countOrder":<orderNumber>,"volume":0.005}} (position volume dan kichik)
 - To'liq close: {{"type":"close","countOrder":<orderNumber>}} (volume qo'yma)
+- Pending limit/stop yopish: type=cancel yoki type=close (ikkalasi ham pending ni bekor qiladi)
 
 === TEXNIK QOIDALAR ===
 Zone = ikki chegarali oraliq ("4205–4102", "4105🛍4102", chart zona)

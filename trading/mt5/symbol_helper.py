@@ -34,15 +34,15 @@ def get_price_dict(symbol: str) -> dict:
     return {"bid": tick.bid, "ask": tick.ask}
 
 
-def resolve_filling_mode(symbol: str) -> int:
+def normalize_volume(symbol: str, volume: float) -> float:
     ensure_symbol(symbol)
     info = mt5.symbol_info(symbol)
     if info is None:
-        return mt5.ORDER_FILLING_RETURN
+        return volume
 
-    filling = info.filling_mode
-    if filling & mt5.SYMBOL_FILLING_FOK:
-        return mt5.ORDER_FILLING_FOK
-    if filling & mt5.SYMBOL_FILLING_IOC:
-        return mt5.ORDER_FILLING_IOC
-    return mt5.ORDER_FILLING_RETURN
+    step = info.volume_step or 0.01
+    min_vol = info.volume_min or step
+    max_vol = info.volume_max or volume
+    clamped = max(min_vol, min(volume, max_vol))
+    steps = max(1, round(clamped / step))
+    return round(steps * step, 8)

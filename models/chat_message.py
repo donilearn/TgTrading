@@ -26,6 +26,7 @@ class ChatMessage(BaseModel):
     is_channel_post: bool = False
     post_author: str | None = None
     entities_note: str | None = None
+    chat_title: str = ""
 
     @property
     def has_media(self) -> bool:

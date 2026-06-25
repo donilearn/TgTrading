@@ -64,13 +64,17 @@ class MT5TradingAdapter:
         )
         return await asyncio.to_thread(self._connection.send_request, request)
 
-    async def close_position(self, position_id: str) -> dict:
-        request = await asyncio.to_thread(ob.build_close_position, position_id)
+    async def close_position(self, position_id: str, comment: str | None = None) -> dict:
+        request = await asyncio.to_thread(
+            ob.build_close_position, position_id, None, comment,
+        )
         return await asyncio.to_thread(self._connection.send_request, request)
 
-    async def close_position_partially(self, position_id: str, volume: float) -> dict:
+    async def close_position_partially(
+        self, position_id: str, volume: float, comment: str | None = None,
+    ) -> dict:
         request = await asyncio.to_thread(
-            ob.build_close_position, position_id, volume,
+            ob.build_close_position, position_id, volume, comment,
         )
         return await asyncio.to_thread(self._connection.send_request, request)
 

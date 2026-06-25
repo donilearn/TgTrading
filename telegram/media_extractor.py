@@ -28,6 +28,7 @@ async def build_chat_message(
     sender: str,
     sender_id: int | None = None,
     sender_display: str | None = None,
+    chat_title: str = "",
 ) -> ChatMessage:
     text = message.raw_text or message.message or ""
     media = await _extract_media(client, message)
@@ -53,6 +54,7 @@ async def build_chat_message(
         is_channel_post=is_channel_post,
         post_author=post_author,
         entities_note=extract_entities_note(message),
+        chat_title=chat_title,
     )
 
 

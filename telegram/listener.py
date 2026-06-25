@@ -25,6 +25,20 @@ class MessageListener:
         self._group_ids = group_ids
         self._buffer = message_buffer
         self._on_message = on_message
+        self._chat_titles: dict[int, str] = {}
+
+    async def _resolve_chat_title(self, chat_id: int) -> str:
+        if chat_id in self._chat_titles:
+            return self._chat_titles[chat_id]
+
+        entity = await self._telegram.client.get_entity(chat_id)
+        title = (
+            getattr(entity, "title", None)
+            or getattr(entity, "username", None)
+            or str(chat_id)
+        )
+        self._chat_titles[chat_id] = title
+        return title
 
     def register(self) -> None:
         client = self._telegram.client
@@ -38,6 +52,7 @@ class MessageListener:
             )
 
             context = self._buffer.get_context(chat_id)
+            chat_title = await self._resolve_chat_title(chat_id)
 
             message = await build_chat_message(
                 client,
@@ -46,6 +61,7 @@ class MessageListener:
                 sender,
                 sender_id=sender_id,
                 sender_display=sender_display,
+                chat_title=chat_title,
             )
 
             media_tag = f" +{message.media.media_type}" if message.media else ""

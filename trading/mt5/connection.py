@@ -4,10 +4,18 @@ from typing import Any
 import MetaTrader5 as mt5
 
 from config.settings import Settings
+from trading.mt5.filling_resolver import resolve_filling_mode
 from trading.mt5.snapshot_mapper import SnapshotMapper
+from trading.mt5.symbol_helper import normalize_volume
 from trading.trading_snapshot import TradingSnapshot
 
 logger = logging.getLogger(__name__)
+
+_SUCCESS_RETCODES = frozenset({
+    mt5.TRADE_RETCODE_DONE,
+    mt5.TRADE_RETCODE_PLACED,
+})
+_CHECK_OK = frozenset({0, mt5.TRADE_RETCODE_DONE})
 
 
 class MT5Connection:
@@ -54,6 +62,21 @@ class MT5Connection:
             account.server if account else "?",
             terminal.name if terminal else "?",
         )
+        self._log_trading_readiness(terminal, account)
+
+    def _log_trading_readiness(self, terminal, account) -> None:
+        if terminal is not None and not terminal.trade_allowed:
+            logger.warning(
+                "MT5: terminal trade_allowed=False — savdo cheklangan bo'lishi mumkin"
+            )
+        if account is not None and not account.trade_allowed:
+            logger.warning(
+                "MT5: account trade_allowed=False — hisobda savdo o'chirilgan"
+            )
+        logger.info(
+            "MT5: 'Algo Trading' tugmasi yoqilgan bo'lishi shart "
+            "(toolbar → AutoTrading / Algo Trading)"
+        )
 
     def disconnect(self) -> None:
         if self._connected:
@@ -71,16 +94,30 @@ class MT5Connection:
         return SnapshotMapper.from_mt5(positions, orders)
 
     def send_request(self, request: dict) -> dict:
+        symbol = request.get("symbol")
+        if symbol and "volume" in request:
+            request = {
+                **request,
+                "volume": normalize_volume(symbol, float(request["volume"])),
+            }
+
+        if request.get("action") == mt5.TRADE_ACTION_DEAL and "type_filling" not in request:
+            request = {
+                **request,
+                "type_filling": resolve_filling_mode(symbol, request),
+            }
+
+        check = mt5.order_check(request)
+        if check is not None and check.retcode not in _CHECK_OK:
+            raise RuntimeError(_format_trade_error(check.retcode, check.comment))
+
         result = mt5.order_send(request)
         if result is None:
             error = mt5.last_error()
             raise RuntimeError(f"MT5 order_send failed: {error}")
 
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            raise RuntimeError(
-                f"MT5 order failed retcode={result.retcode} "
-                f"comment={result.comment}"
-            )
+        if result.retcode not in _SUCCESS_RETCODES:
+            raise RuntimeError(_format_trade_error(result.retcode, result.comment))
 
         return {
             "stringCode": "TRADE_RETCODE_DONE",
@@ -89,3 +126,12 @@ class MT5Connection:
             "deal": result.deal,
             "comment": result.comment,
         }
+
+
+def _format_trade_error(retcode: int, comment: str) -> str:
+    if retcode == mt5.TRADE_RETCODE_CLIENT_DISABLES_AT:
+        return (
+            "MT5 Algo Trading o'chirilgan — terminalda "
+            "'Algo Trading' / 'AutoTrading' tugmasini yoqing"
+        )
+    return f"MT5 order failed retcode={retcode} comment={comment}"

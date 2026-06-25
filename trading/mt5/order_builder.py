@@ -3,7 +3,8 @@ from typing import Any
 
 import MetaTrader5 as mt5
 
-from trading.mt5.symbol_helper import ensure_symbol, get_price_dict, resolve_filling_mode
+from trading.mt5.filling_resolver import resolve_filling_mode
+from trading.mt5.symbol_helper import ensure_symbol, get_price_dict, normalize_volume
 
 
 def build_market_order(
@@ -14,6 +15,7 @@ def build_market_order(
     take_profit: float | None,
     options: dict | None,
 ) -> dict:
+    volume = normalize_volume(symbol, volume)
     ensure_symbol(symbol)
     tick = get_price_dict(symbol)
     order_type = mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL
@@ -26,10 +28,10 @@ def build_market_order(
         "action": mt5.TRADE_ACTION_DEAL,
         "type": order_type,
         "price": price,
-        "type_filling": resolve_filling_mode(symbol),
         "type_time": mt5.ORDER_TIME_GTC,
     })
     _apply_stops(request, stop_loss, take_profit)
+    request["type_filling"] = resolve_filling_mode(symbol, request)
     return request
 
 
@@ -44,6 +46,7 @@ def build_pending_order(
     stop_limit_price: float | None,
     options: dict | None,
 ) -> dict:
+    volume = normalize_volume(symbol, volume)
     ensure_symbol(symbol)
     request = _base_request(symbol, volume, options)
     request.update({
@@ -98,6 +101,7 @@ def build_modify_order(
         "action": mt5.TRADE_ACTION_MODIFY,
         "order": int(order_id),
         "symbol": order.symbol,
+        "type": order.type,
         "price": open_price if open_price is not None else order.price_open,
         "sl": stop_loss if stop_loss is not None else order.sl,
         "tp": take_profit if take_profit is not None else order.tp,
@@ -108,13 +112,21 @@ def build_modify_order(
     return request
 
 
-def build_close_position(position_id: str, volume: float | None = None) -> dict:
+def build_close_position(
+    position_id: str,
+    volume: float | None = None,
+    comment: str | None = None,
+) -> dict:
     positions = mt5.positions_get(ticket=int(position_id))
     if not positions:
         raise ValueError(f"Position {position_id} not found")
 
     pos = positions[0]
-    close_volume = volume if volume is not None else pos.volume
+    if volume is not None:
+        close_volume = volume
+    else:
+        close_volume = pos.volume
+    close_volume = normalize_volume(pos.symbol, close_volume)
     is_buy = pos.type == mt5.POSITION_TYPE_BUY
     order_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
 
@@ -123,7 +135,7 @@ def build_close_position(position_id: str, volume: float | None = None) -> dict:
     if price is None:
         raise ValueError(f"No price to close {pos.symbol}")
 
-    return {
+    request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": pos.symbol,
         "volume": close_volume,
@@ -132,10 +144,11 @@ def build_close_position(position_id: str, volume: float | None = None) -> dict:
         "price": price,
         "deviation": 20,
         "magic": pos.magic,
-        "comment": "close",
-        "type_filling": resolve_filling_mode(pos.symbol),
+        "comment": (comment or "close")[:31],
         "type_time": mt5.ORDER_TIME_GTC,
     }
+    request["type_filling"] = resolve_filling_mode(pos.symbol, request)
+    return request
 
 
 def build_cancel_order(order_id: str) -> dict:
@@ -171,9 +184,9 @@ def _base_request(symbol: str, volume: float, options: dict | None) -> dict:
     opts = options or {}
     request = {
         "symbol": symbol,
-        "volume": volume,
+        "volume": normalize_volume(symbol, volume),
         "deviation": 20,
-        "comment": str(opts.get("comment", "tg"))[:31],
+        "comment": str(opts.get("comment", "TG"))[:31],
         "type_time": mt5.ORDER_TIME_GTC,
     }
     magic = opts.get("magic")

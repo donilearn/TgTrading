@@ -155,6 +155,8 @@ class TradingPipeline:
                 magic,
                 existing,
                 max_entries=to_place,
+                channel_name=message.chat_title,
+                message_time=message.date,
             )
 
             success_count = 0
