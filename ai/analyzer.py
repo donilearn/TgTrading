@@ -3,13 +3,17 @@ import logging
 
 from google.genai import types
 
-from ai.request_logger import log_gemini_error, log_gemini_request, log_gemini_response
-from ai.client import GeminiClient
-from ai.content_builder import build_analysis_contents
+from ai.content_builder import build_gemini_contents
+from ai.grok_content_builder import build_grok_messages
+from ai.gemini_client import GeminiClient
+from ai.grok_client import GrokClient
+from ai.media_parser import MediaParser
+from ai.message_media import enrich_with_parsed_media, is_audio_video, is_image
 from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
 from ai.redundant_market_guard import remove_redundant_market_entries
+from ai.request_logger import log_ai_error, log_ai_request, log_ai_response
 from ai.zone_grid_expander import expand_zone_grid_orders
 from config.settings import Settings
 from models.ai_trade_response import AiTradeResponse
@@ -22,8 +26,15 @@ logger = logging.getLogger(__name__)
 
 
 class SignalAnalyzer:
-    def __init__(self, gemini_client: GeminiClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        grok_client: GrokClient,
+        gemini_client: GeminiClient,
+        settings: Settings,
+    ) -> None:
+        self._grok = grok_client
         self._gemini = gemini_client
+        self._media_parser = MediaParser(gemini_client)
         self._settings = settings
         self._allowed_symbols = settings.parsed_allowed_symbols
         self._system_prompt = build_system_prompt(
@@ -48,18 +59,89 @@ class SignalAnalyzer:
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
 
+        grok_message = message
+
+        if is_audio_video(message.media):
+            try:
+                parsed = await self._media_parser.parse(message)
+                grok_message = enrich_with_parsed_media(message, parsed)
+            except Exception as exc:
+                logger.warning(
+                    "Gemini media parse failed chat=%s — full Gemini analysis: %s",
+                    message.chat_id,
+                    exc,
+                )
+                return await self._analyze_with_gemini(
+                    message, context, existing_orders, market,
+                )
+
+        try:
+            return await self._analyze_with_grok(
+                grok_message,
+                context,
+                existing_orders,
+                market,
+                image_source=message if is_image(message.media) else None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Grok failed chat=%s — Gemini fallback: %s",
+                message.chat_id,
+                exc,
+            )
+            return await self._analyze_with_gemini(
+                message, context, existing_orders, market,
+            )
+
+    async def _analyze_with_grok(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+        existing_orders: list[ExistingOrder],
+        market: list[SymbolMarketInfo],
+        *,
+        image_source: ChatMessage | None = None,
+    ) -> AiTradeResponse:
+        messages = build_grok_messages(
+            self._system_prompt,
+            message,
+            context,
+            existing_orders,
+            market,
+            self._settings,
+            image_source=image_source,
+        )
+        log_ai_request(
+            message.chat_id,
+            "grok",
+            self._grok.model,
+            messages,
+            len(self._system_prompt),
+        )
+
+        result = await self._grok.parse_structured(messages, AiTradeResponse)
+        log_ai_response(message.chat_id, "grok", self._grok.model, result)
+        return self._post_process(result, existing_orders, market, message.text)
+
+    async def _analyze_with_gemini(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+        existing_orders: list[ExistingOrder],
+        market: list[SymbolMarketInfo],
+    ) -> AiTradeResponse:
         config = types.GenerateContentConfig(
             system_instruction=self._system_prompt,
             response_mime_type="application/json",
             response_schema=AiTradeResponse,
         )
-        contents = build_analysis_contents(
+        contents = build_gemini_contents(
             message, context, existing_orders, market, self._settings,
         )
-
         primary_model = self._gemini.model
-        log_gemini_request(
+        log_ai_request(
             message.chat_id,
+            "gemini",
             primary_model,
             contents,
             len(self._system_prompt),
@@ -74,30 +156,38 @@ class SignalAnalyzer:
                 contents,
                 config,
             )
-
             used_model = _response_model(response, primary_model)
-            log_gemini_response(message.chat_id, used_model, response)
+            log_ai_response(message.chat_id, "gemini", used_model, response)
 
             result = response.parsed or AiTradeResponse.model_validate_json(response.text)
-            result = self._validate_symbol(result)
-            result = remove_redundant_market_entries(result, existing_orders)
-            result = patch_existing_positions_sltp(result, existing_orders)
-            result = expand_zone_grid_orders(
-                result,
-                self._settings,
-                len(existing_orders),
-                message_text=message.text,
-                market=market,
-            )
-            return result
+            return self._post_process(result, existing_orders, market, message.text)
 
         except Exception as exc:
-            log_gemini_error(message.chat_id, primary_model, exc)
+            log_ai_error(message.chat_id, "gemini", primary_model, exc)
             logger.error("Gemini analysis failed: %s", exc)
             return AiTradeResponse(
                 is_signal=False,
                 reasoning=f"Analysis error: {exc}",
             )
+
+    def _post_process(
+        self,
+        result: AiTradeResponse,
+        existing_orders: list[ExistingOrder],
+        market: list[SymbolMarketInfo],
+        message_text: str | None,
+    ) -> AiTradeResponse:
+        result = self._validate_symbol(result)
+        result = remove_redundant_market_entries(result, existing_orders)
+        result = patch_existing_positions_sltp(result, existing_orders)
+        result = expand_zone_grid_orders(
+            result,
+            self._settings,
+            len(existing_orders),
+            message_text=message_text,
+            market=market,
+        )
+        return result
 
     def _validate_symbol(self, result: AiTradeResponse) -> AiTradeResponse:
         if not result.symbol:

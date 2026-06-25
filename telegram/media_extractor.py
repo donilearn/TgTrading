@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 PHOTO_MIME = "image/jpeg"
 VOICE_MIME = "audio/ogg"
 AUDIO_MIME = "audio/mpeg"
+VIDEO_MIME = "video/mp4"
 
 
 async def build_chat_message(
@@ -96,6 +97,16 @@ async def _extract_media(
                     mime_type=mime,
                     data=data,
                     media_type="audio",
+                )
+
+        if message.video:
+            data = await client.download_media(message, bytes)
+            if data:
+                mime = getattr(message.video, "mime_type", None) or VIDEO_MIME
+                return MediaAttachment(
+                    mime_type=mime,
+                    data=data,
+                    media_type="video",
                 )
 
     except Exception:

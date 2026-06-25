@@ -3,7 +3,8 @@ import contextlib
 import logging
 
 from ai.analyzer import SignalAnalyzer
-from ai.client import GeminiClient
+from ai.gemini_client import GeminiClient
+from ai.grok_client import GrokClient
 from config.settings import Settings
 from models.chat_message import ChatMessage
 from telegram.client import TelegramService
@@ -31,8 +32,9 @@ class TradingPipeline:
         self._inflight_messages = 0
 
         self._telegram = TelegramService(settings)
+        self._grok = GrokClient(settings)
         self._gemini = GeminiClient(settings)
-        self._analyzer = SignalAnalyzer(self._gemini, settings)
+        self._analyzer = SignalAnalyzer(self._grok, self._gemini, settings)
         self._ctrader = CTraderService(settings)
         self._ctrader_keeper = CTraderConnectionKeeper(self._ctrader)
         self._limit_tracker = OrderLimitTracker(

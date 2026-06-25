@@ -29,6 +29,9 @@ class Settings(BaseSettings):
         default="gemini-2.0-flash,gemini-2.5-flash-lite",
     )
 
+    xai_api_key: str
+    xai_model: str = Field(default="grok-4.3")
+
     ctrader_client_id: str
     ctrader_client_secret: str
     ctrader_access_token: str
