@@ -4,11 +4,9 @@ import logging
 from google.genai import types
 
 from ai.content_builder import build_gemini_contents
-from ai.grok_content_builder import build_grok_messages
 from ai.gemini_client import GeminiClient
-from ai.grok_client import GrokClient
 from ai.media_parser import MediaParser
-from ai.message_media import enrich_with_parsed_media, is_audio_video, is_image
+from ai.message_media import enrich_with_parsed_media, is_audio_video
 from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
@@ -28,11 +26,9 @@ logger = logging.getLogger(__name__)
 class SignalAnalyzer:
     def __init__(
         self,
-        grok_client: GrokClient,
         gemini_client: GeminiClient,
         settings: Settings,
     ) -> None:
-        self._grok = grok_client
         self._gemini = gemini_client
         self._media_parser = MediaParser(gemini_client)
         self._settings = settings
@@ -59,69 +55,21 @@ class SignalAnalyzer:
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
 
-        grok_message = message
-
+        analysis_message = message
         if is_audio_video(message.media):
             try:
                 parsed = await self._media_parser.parse(message)
-                grok_message = enrich_with_parsed_media(message, parsed)
+                analysis_message = enrich_with_parsed_media(message, parsed)
             except Exception as exc:
                 logger.warning(
-                    "Gemini media parse failed chat=%s — full Gemini analysis: %s",
+                    "Media parse failed chat=%s — Gemini with raw media: %s",
                     message.chat_id,
                     exc,
                 )
-                return await self._analyze_with_gemini(
-                    message, context, existing_orders, market,
-                )
 
-        try:
-            return await self._analyze_with_grok(
-                grok_message,
-                context,
-                existing_orders,
-                market,
-                image_source=message if is_image(message.media) else None,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Grok failed chat=%s — Gemini fallback: %s",
-                message.chat_id,
-                exc,
-            )
-            return await self._analyze_with_gemini(
-                message, context, existing_orders, market,
-            )
-
-    async def _analyze_with_grok(
-        self,
-        message: ChatMessage,
-        context: list[ChatMessage],
-        existing_orders: list[ExistingOrder],
-        market: list[SymbolMarketInfo],
-        *,
-        image_source: ChatMessage | None = None,
-    ) -> AiTradeResponse:
-        messages = build_grok_messages(
-            self._system_prompt,
-            message,
-            context,
-            existing_orders,
-            market,
-            self._settings,
-            image_source=image_source,
+        return await self._analyze_with_gemini(
+            analysis_message, context, existing_orders, market,
         )
-        log_ai_request(
-            message.chat_id,
-            "grok",
-            self._grok.model,
-            messages,
-            len(self._system_prompt),
-        )
-
-        result = await self._grok.parse_structured(messages, AiTradeResponse)
-        log_ai_response(message.chat_id, "grok", self._grok.model, result)
-        return self._post_process(result, existing_orders, market, message.text)
 
     async def _analyze_with_gemini(
         self,

@@ -1,9 +1,9 @@
 # TgTrading — MT5 Copy Trading Bot
 
-Python bot that analyzes Telegram group signals with AI (Grok + Gemini) and executes trades via **MetaTrader 5** Python API.
+Python bot that analyzes Telegram group signals with **Google Gemini** and executes trades via **MetaTrader 5** Python API.
 
 ```
-Telegram message → Grok (primary) / Gemini (fallback) → JSON command → MT5 trade
+Telegram message → Gemini → JSON command → MT5 trade
 ```
 
 ## Requirements
@@ -12,7 +12,6 @@ Telegram message → Grok (primary) / Gemini (fallback) → JSON command → MT5
 - **MetaTrader 5 terminal** — running and logged in on Windows
 - [Telegram API](https://my.telegram.org)
 - [Google AI Studio](https://aistudio.google.com/apikey)
-- [xAI](https://console.x.ai) — Grok
 
 ## Setup
 
@@ -51,7 +50,7 @@ python main.py
 pipeline/orchestrator.py   # Telegram → AI → MT5
 trading/mt5/               # MT5 connection, adapter, order builder
 trading/ai_order_executor.py
-ai/                        # Grok + Gemini analysis
+ai/                        # Gemini analysis
 telegram/                  # Telethon listener
 ```
 
@@ -68,4 +67,4 @@ telegram/                  # Telethon listener
 
 - **MetaTrader5** — [Python integration docs](https://www.mql5.com/en/docs/python_metatrader5)
 - **Telethon** — Telegram
-- **Grok + Gemini** — AI signal analysis
+- **Google Gemini** — AI signal analysis

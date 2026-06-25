@@ -17,7 +17,7 @@ Faqat ajratilgan matn qaytar — JSON emas."""
 
 
 class MediaParser:
-    """Audio/video ni Gemini orqali matnga aylantiradi (Grok uchun)."""
+    """Audio/video ni Gemini orqali matnga aylantiradi."""
 
     def __init__(self, gemini: GeminiClient) -> None:
         self._gemini = gemini

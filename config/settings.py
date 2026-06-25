@@ -29,9 +29,6 @@ class Settings(BaseSettings):
         default="gemini-2.0-flash,gemini-2.5-flash-lite",
     )
 
-    xai_api_key: str
-    xai_model: str = Field(default="grok-4.3")
-
     mt5_path: str | None = Field(default=None, description="MT5 terminal64.exe path")
     mt5_login: int
     mt5_password: str
