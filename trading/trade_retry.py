@@ -13,8 +13,8 @@ _RETRYABLE_HINTS = (
     "not connected",
     "connection closed",
     "disconnected",
-    "not connected to broker",
-    "not synchronized",
+    "ctrader not connected",
+    "timeout_error",
 )
 
 
@@ -24,7 +24,7 @@ def is_retryable_trade_error(exc: Exception) -> bool:
 
 
 async def run_trade_with_retry(
-    metaapi: Any,
+    trading: Any,
     operation: Callable[[Any], Awaitable[T]],
     max_retries: int = 3,
     base_delay: float = 1.0,
@@ -33,7 +33,7 @@ async def run_trade_with_retry(
 
     for attempt in range(max_retries):
         try:
-            return await metaapi.run_rpc(operation)
+            return await trading.run_trading(operation)
         except Exception as exc:
             last_error = exc
             if not is_retryable_trade_error(exc) or attempt >= max_retries - 1:
@@ -45,8 +45,8 @@ async def run_trade_with_retry(
                 max_retries,
                 exc,
             )
-            await metaapi.reconnect_all()
-            await metaapi.ensure_rpc_ready()
+            await trading.reconnect_all()
+            await trading.ensure_ready()
             await asyncio.sleep(base_delay * (attempt + 1))
 
     if last_error:

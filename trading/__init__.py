@@ -1,4 +1,4 @@
-from trading.client import MetaApiService
+from trading.ctrader import CTraderConnectionKeeper, CTraderService
 from trading.executor import TradeExecutor
 
-__all__ = ["MetaApiService", "TradeExecutor"]
+__all__ = ["CTraderService", "CTraderConnectionKeeper", "TradeExecutor"]

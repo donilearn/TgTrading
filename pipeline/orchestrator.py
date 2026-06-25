@@ -10,9 +10,9 @@ from telegram.client import TelegramService
 from telegram.listener import MessageListener
 from telegram.message_buffer import MessageBuffer
 from trading.ai_order_executor import AiOrderExecutor
-from trading.client import MetaApiService
+from trading.client import CTraderService
+from trading.ctrader.connection_keeper import CTraderConnectionKeeper
 from trading.existing_orders_service import ExistingOrdersService
-from trading.metaapi_connection_keeper import MetaApiConnectionKeeper
 from trading.order_limit_tracker import OrderLimitTracker
 from trading.trading_context_loader import TradingContextLoader
 from pipeline.shutdown_handler import ShutdownHandler
@@ -33,9 +33,8 @@ class TradingPipeline:
         self._telegram = TelegramService(settings)
         self._gemini = GeminiClient(settings)
         self._analyzer = SignalAnalyzer(self._gemini, settings)
-        self._metaapi = MetaApiService(settings)
-        self._metaapi_keeper = MetaApiConnectionKeeper(self._metaapi)
-        self._metaapi.attach_keeper(self._metaapi_keeper)
+        self._ctrader = CTraderService(settings)
+        self._ctrader_keeper = CTraderConnectionKeeper(self._ctrader)
         self._limit_tracker = OrderLimitTracker(
             max_per_channel=settings.max_order_count,
             max_per_message=settings.effective_max_per_message,
@@ -43,7 +42,7 @@ class TradingPipeline:
         self._executor = AiOrderExecutor(settings)
         self._existing_orders = ExistingOrdersService()
         self._context_loader = TradingContextLoader(
-            self._metaapi,
+            self._ctrader,
             self._existing_orders,
             settings,
         )
@@ -149,7 +148,7 @@ class TradingPipeline:
                 limit_msg = ""
 
             results = await self._executor.execute(
-                self._metaapi,
+                self._ctrader,
                 response,
                 magic,
                 existing,
@@ -187,11 +186,8 @@ class TradingPipeline:
 
     async def start(self) -> None:
         await self._telegram.start()
-        await self._metaapi.connect()
-        await self._metaapi.subscribe_market_data(
-            self._settings.parsed_allowed_symbols,
-        )
-        self._metaapi_keeper.start()
+        await self._ctrader.connect()
+        self._ctrader_keeper.start()
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"
@@ -258,9 +254,9 @@ class TradingPipeline:
         self._shutting_down = True
 
         await self._wait_for_inflight_handlers()
-        await self._metaapi_keeper.stop()
+        await self._ctrader_keeper.stop()
         await self._telegram.stop()
-        await self._metaapi.disconnect()
+        await self._ctrader.disconnect()
         logger.info("Pipeline stopped")
 
     async def _wait_for_inflight_handlers(self) -> None:

@@ -29,8 +29,13 @@ class Settings(BaseSettings):
         default="gemini-2.0-flash,gemini-2.5-flash-lite",
     )
 
-    metaapi_token: str
-    metaapi_account_id: str
+    ctrader_client_id: str
+    ctrader_client_secret: str
+    ctrader_access_token: str
+    ctrader_refresh_token: str
+    ctrader_account_id: int
+    ctrader_host_type: str = Field(default="live", description="live | demo")
+    ctrader_redirect_uri: str = "http://localhost:8080"
 
     default_volume: float = 0.01
     min_volume: float = Field(default=0.01, gt=0)
@@ -58,7 +63,6 @@ class Settings(BaseSettings):
 
     @property
     def effective_max_per_message(self) -> int:
-        """Rejim (2/5) va env MAX_ORDER_PER_GROUP dan qattiqroq limit."""
         return min(self.max_orders_per_message, self.max_order_per_group)
 
     @property

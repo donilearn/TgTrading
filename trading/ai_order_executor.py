@@ -35,7 +35,7 @@ class AiOrderExecutor:
 
     async def execute(
         self,
-        metaapi: Any,
+        trading: Any,
         response: AiTradeResponse,
         magic: int,
         existing: list[ExistingOrder],
@@ -61,7 +61,7 @@ class AiOrderExecutor:
                     if entries_placed >= max_entries:
                         break
                 result = await self._execute_one(
-                    metaapi, response, action, magic,
+                    trading, response, action, magic,
                     existing, entry_index,
                 )
                 results.append(result)
@@ -95,7 +95,7 @@ class AiOrderExecutor:
 
     async def _execute_one(
         self,
-        metaapi: Any,
+        trading: Any,
         response: AiTradeResponse,
         action: AiOrderAction,
         magic: int,
@@ -121,24 +121,24 @@ class AiOrderExecutor:
         try:
             if action_type == "entry":
                 return await run_trade_with_retry(
-                    metaapi,
+                    trading,
                     lambda conn: self._execute_entry(
                         conn, response, action, volume, magic, index,
                     ),
                 )
             if action_type == "modify":
                 return await run_trade_with_retry(
-                    metaapi,
+                    trading,
                     lambda conn: self._execute_modify(conn, action, existing),
                 )
             if action_type == "close":
                 return await run_trade_with_retry(
-                    metaapi,
+                    trading,
                     lambda conn: self._execute_close(conn, action, existing),
                 )
             if action_type == "cancel":
                 return await run_trade_with_retry(
-                    metaapi,
+                    trading,
                     lambda conn: self._execute_cancel(conn, action, existing),
                 )
 
@@ -147,7 +147,7 @@ class AiOrderExecutor:
                 message=f"Unknown type: {action.action_type}",
             )
         except Exception as exc:
-            error_msg = format_trade_error(metaapi.api, exc)
+            error_msg = format_trade_error(trading.api, exc)
             logger.error(
                 "Execute failed: %s | %s %s price=%s vol=%s",
                 error_msg, action.action_type, action.order_type,

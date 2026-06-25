@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class OrderRouter:
-    """Routes signal to the correct MetaAPI order method."""
+    """Routes signal to the correct cTrader order method."""
 
     async def place_order(
         self,

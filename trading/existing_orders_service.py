@@ -3,7 +3,7 @@ from typing import Any
 
 from models.existing_order import ExistingOrder
 from trading.magic_matcher import matches_magic
-from trading.metaapi_trading_snapshot import MetaApiTradingSnapshot
+from trading.trading_snapshot import TradingSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class ExistingOrdersService:
     async def fetch(self, connection: Any, magic: int) -> list[ExistingOrder]:
         positions = await connection.get_positions()
         orders = await connection.get_orders()
-        snapshot = MetaApiTradingSnapshot(
+        snapshot = TradingSnapshot(
             positions=list(positions or []),
             orders=list(orders or []),
         )
@@ -23,7 +23,7 @@ class ExistingOrdersService:
 
     def from_snapshot(
         self,
-        snapshot: MetaApiTradingSnapshot,
+        snapshot: TradingSnapshot,
         magic: int,
     ) -> list[ExistingOrder]:
         orders: list[ExistingOrder] = []
@@ -42,10 +42,9 @@ class ExistingOrdersService:
 
     def count_for_magics(
         self,
-        snapshot: MetaApiTradingSnapshot,
+        snapshot: TradingSnapshot,
         magics: list[int],
     ) -> int:
-        """Bitta snapshot dan barcha guruhlar order sonini hisoblaydi."""
         total = 0
         for magic in magics:
             total += sum(
@@ -55,15 +54,6 @@ class ExistingOrdersService:
                 1 for raw in snapshot.orders if matches_magic(raw, magic)
             )
         return total
-
-    async def fetch_global_count(self, connection, magics: list[int]) -> int:
-        positions = await connection.get_positions()
-        orders = await connection.get_orders()
-        snapshot = MetaApiTradingSnapshot(
-            positions=list(positions or []),
-            orders=list(orders or []),
-        )
-        return self.count_for_magics(snapshot, magics)
 
     def _from_position(self, raw: dict) -> ExistingOrder:
         return ExistingOrder(

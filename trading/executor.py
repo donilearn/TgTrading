@@ -5,7 +5,7 @@ from models.order_plan import OrderPlan
 from models.signal import SignalAnalysis
 from models.signal_type import SignalType
 from models.trade_result import TradeResult
-from trading.client import MetaApiService
+from trading.client import CTraderService
 from trading.client_id import build_trade_options
 from trading.order_expiration_builder import apply_pending_order_expiration
 from trading.error_formatter import format_trade_error
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 class TradeExecutor:
     def __init__(
         self,
-        metaapi_service: MetaApiService,
+        ctrader_service: CTraderService,
         settings: Settings,
         limit_tracker: OrderLimitTracker,
     ) -> None:
-        self._metaapi = metaapi_service
+        self._ctrader = ctrader_service
         self._settings = settings
         self._limit_tracker = limit_tracker
         self._router = OrderRouter()
@@ -107,7 +107,7 @@ class TradeExecutor:
 
         try:
             results = await self._positions.modify_group_positions(
-                self._metaapi.connection, magic, signal,
+                self._ctrader.connection, magic, signal,
             )
             if not results:
                 return [TradeResult(
@@ -119,7 +119,7 @@ class TradeExecutor:
                 message=f"Updated {len(results)} position/order(s)",
             )]
         except Exception as exc:
-            error_msg = format_trade_error(self._metaapi.api, exc)
+            error_msg = format_trade_error(self._ctrader.api, exc)
             return [TradeResult(
                 success=False, symbol=symbol, action="update", message=error_msg,
             )]
@@ -140,7 +140,7 @@ class TradeExecutor:
 
         try:
             results = await self._positions.cancel_group_orders(
-                self._metaapi.connection, magic, signal,
+                self._ctrader.connection, magic, signal,
             )
             if not results:
                 return [TradeResult(
@@ -152,7 +152,7 @@ class TradeExecutor:
                 message=f"Cancelled {len(results)} order(s)",
             )]
         except Exception as exc:
-            error_msg = format_trade_error(self._metaapi.api, exc)
+            error_msg = format_trade_error(self._ctrader.api, exc)
             return [TradeResult(
                 success=False, symbol=symbol, action="cancel", message=error_msg,
             )]
@@ -184,7 +184,7 @@ class TradeExecutor:
 
         try:
             results = await self._positions.close_group_positions(
-                self._metaapi.connection, magic, signal,
+                self._ctrader.connection, magic, signal,
             )
             if not results:
                 return TradeResult(
@@ -196,7 +196,7 @@ class TradeExecutor:
                 message=f"Closed {len(results)} position(s)",
             )
         except Exception as exc:
-            error_msg = format_trade_error(self._metaapi.api, exc)
+            error_msg = format_trade_error(self._ctrader.api, exc)
             return TradeResult(
                 success=False, symbol=symbol, action="close", message=error_msg,
             )
@@ -271,7 +271,7 @@ class TradeExecutor:
             )
 
             result = await self._router.place_order(
-                self._metaapi.connection,
+                self._ctrader.connection,
                 signal,
                 volume,
                 entry_price,
@@ -293,7 +293,7 @@ class TradeExecutor:
             )
 
         except Exception as exc:
-            error_msg = format_trade_error(self._metaapi.api, exc)
+            error_msg = format_trade_error(self._ctrader.api, exc)
             logger.error("Order failed: %s — %s", order_label, error_msg)
             return TradeResult(
                 success=False, symbol=symbol, action=action,
