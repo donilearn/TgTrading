@@ -32,13 +32,11 @@ class Settings(BaseSettings):
     xai_api_key: str
     xai_model: str = Field(default="grok-4.3")
 
-    ctrader_client_id: str
-    ctrader_client_secret: str
-    ctrader_access_token: str
-    ctrader_refresh_token: str
-    ctrader_account_id: int
-    ctrader_host_type: str = Field(default="live", description="live | demo")
-    ctrader_redirect_uri: str = "http://localhost:8080"
+    mt5_path: str | None = Field(default=None, description="MT5 terminal64.exe path")
+    mt5_login: int
+    mt5_password: str
+    mt5_server: str | None = Field(default=None, description="Broker server name")
+    mt5_timeout: int = Field(default=60000, ge=1000, description="Initialize timeout ms")
 
     default_volume: float = 0.01
     min_volume: float = Field(default=0.01, gt=0)

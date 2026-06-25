@@ -2,17 +2,17 @@ import asyncio
 import contextlib
 import logging
 
-from trading.ctrader.service import CTraderService
+from trading.mt5.service import MT5Service
 
 logger = logging.getLogger(__name__)
 
 _KEEPER_INTERVAL_SEC = 60.0
 
 
-class CTraderConnectionKeeper:
-    """Ulanish sog'ligini tekshiradi — reconnect kerak bo'lsa."""
+class MT5ConnectionKeeper:
+    """MT5 terminal ulanishini tekshiradi."""
 
-    def __init__(self, service: CTraderService) -> None:
+    def __init__(self, service: MT5Service) -> None:
         self._service = service
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -23,9 +23,9 @@ class CTraderConnectionKeeper:
         self._stop.clear()
         self._task = asyncio.create_task(
             self._run_loop(),
-            name="ctrader-connection-keeper",
+            name="mt5-connection-keeper",
         )
-        logger.info("cTrader connection keeper started")
+        logger.info("MT5 connection keeper started")
 
     async def stop(self) -> None:
         self._stop.set()
@@ -49,8 +49,8 @@ class CTraderConnectionKeeper:
             if self._service.is_ready:
                 continue
 
-            logger.warning("cTrader session unhealthy — reconnecting")
+            logger.warning("MT5 session unhealthy — reconnecting")
             try:
                 await self._service.reconnect_all()
             except Exception as exc:
-                logger.error("cTrader reconnect failed: %s", exc)
+                logger.error("MT5 reconnect failed: %s", exc)

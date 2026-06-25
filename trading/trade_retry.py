@@ -13,7 +13,8 @@ _RETRYABLE_HINTS = (
     "not connected",
     "connection closed",
     "disconnected",
-    "ctrader not connected",
+    "mt5 not connected",
+    "mt5 initialize failed",
     "timeout_error",
 )
 
