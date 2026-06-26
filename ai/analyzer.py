@@ -8,6 +8,7 @@ from ai.client import GeminiClient
 from ai.content_builder import build_analysis_contents
 from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
+from ai.default_sltp_patcher import apply_default_sltp_to_entries
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
 from ai.redundant_market_guard import remove_redundant_market_entries
 from ai.zone_grid_expander import expand_zone_grid_orders
@@ -82,6 +83,7 @@ class SignalAnalyzer:
             result = self._validate_symbol(result)
             result = remove_redundant_market_entries(result, existing_orders)
             result = patch_existing_positions_sltp(result, existing_orders)
+            result = apply_default_sltp_to_entries(result, self._settings, market)
             result = expand_zone_grid_orders(
                 result,
                 self._settings,

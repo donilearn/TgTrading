@@ -51,13 +51,21 @@ class Settings(BaseSettings):
     )
     default_sl_pips: float = Field(
         default=300.0,
-        gt=0,
-        validation_alias=AliasChoices("default_SL", "DEFAULT_SL"),
+        ge=0,
+        validation_alias=AliasChoices(
+            "default_SL",
+            "DEFAULT_SL",
+            "DEFAULT_SL_PIPS",
+        ),
     )
     default_tp_pips: float = Field(
         default=500.0,
-        gt=0,
-        validation_alias=AliasChoices("default_TP", "DEFAULT_TP"),
+        ge=0,
+        validation_alias=AliasChoices(
+            "default_TP",
+            "DEFAULT_TP",
+            "DEFAULT_TP_PIPS",
+        ),
     )
 
     @property
