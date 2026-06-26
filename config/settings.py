@@ -4,10 +4,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.group_magic import group_magic_map, magic_from_group_id
-from config.order_limits import (
-    AGGRESSIVE_ORDERS_PER_MESSAGE,
-    NORMAL_ORDERS_PER_MESSAGE,
-)
+from config.order_limits import NORMAL_ORDERS_PER_MESSAGE
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -82,8 +79,8 @@ class Settings(BaseSettings):
     @property
     def max_orders_per_message(self) -> int:
         if self.aggressive_mode:
-            return AGGRESSIVE_ORDERS_PER_MESSAGE
-        return NORMAL_ORDERS_PER_MESSAGE
+            return self.max_order_per_group
+        return min(NORMAL_ORDERS_PER_MESSAGE, self.max_order_per_group)
 
     @property
     def effective_max_per_message(self) -> int:

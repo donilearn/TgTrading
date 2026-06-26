@@ -13,6 +13,7 @@ from ai.default_sltp_patcher import apply_default_sltp_to_entries
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
 from ai.redundant_market_guard import remove_redundant_market_entries
 from ai.request_logger import log_ai_error, log_ai_request, log_ai_response
+from ai.tp_entry_expander import expand_tp_entry_orders
 from ai.zone_grid_expander import expand_zone_grid_orders
 from config.settings import Settings
 from models.ai_trade_response import AiTradeResponse
@@ -131,6 +132,13 @@ class SignalAnalyzer:
         result = patch_existing_positions_sltp(result, existing_orders)
         result = apply_default_sltp_to_entries(result, self._settings, market)
         result = expand_zone_grid_orders(
+            result,
+            self._settings,
+            len(existing_orders),
+            message_text=message_text,
+            market=market,
+        )
+        result = expand_tp_entry_orders(
             result,
             self._settings,
             len(existing_orders),

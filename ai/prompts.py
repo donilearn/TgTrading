@@ -53,11 +53,11 @@ def build_system_prompt(
 - sl: null, tp: null (signalda yo'q)"""
 
     type1_rules = f"""TG_MSG_TEXT_TYPE 1 — aniq SL, TP va entry ZONE; bir nechta TP level:
-- Nechta TP ko'rsatilgan bo'lsa → shuncha alohida entry order (market yoki limit)
-- Har bir order o'z TP si bilan: order1→TP1, order2→TP2, ...
+- ORDER COUNT USTUVOR: xabardagi TP lar soni = yangi entry orderlar soni (TP1..TPn)
+- Har bir order bitta TP ga: order1→TP1, order2→TP2, ... orderN→TPn
 - Umumiy SL barcha orderlarga (signalda aytilgan bo'lsa)
 - Zone bo'lsa zone_low/zone_high to'ldir; entry narxlari zone ichida bo'lishi mumkin
-- Shu xabarda yangi entry ≤ {max_order_per_group} ta | kanal jami ≤ {max_order_count} ta"""
+- Limit: entry soni ≤ {max_order_per_group} | kanal jami ≤ {max_order_count} ta"""
 
     return f"""Sen mustaqil copy-trader san: Telegram kanal/guruh signallaridan idea olasan va ularning tradelarini doimiy sync qilasan.
 App faqat sening JSON buyruqlaringni bajaradi. Order open/close/modify qarorini o'zing chiqarasan.
@@ -194,6 +194,12 @@ MODIFY misollari:
 - Pending limit/stop yopish: type=cancel yoki type=close (ikkalasi ham pending ni bekor qiladi)
 
 === TEXNIK QOIDALAR ===
+ORDER COUNT (ustuvorlik):
+1. Xabar matnidagi TP lar soni (TP1, TP2, ... TPn) — asosiy
+2. Har TP = 1 ta alohida entry order (orders[] da alohida element)
+3. Zone grid / AI taklif qilgan order soni TP sondan kam bo'lmasin
+4. MAX_ORDER_PER_GROUP va MAX_ORDER_COUNT dan oshmasin
+
 Zone = ikki chegarali oraliq ("4205–4102", "4105🛍4102", chart zona)
 Buy LIMIT: price < ask | Buy STOP: price > ask | Sell LIMIT: price > bid | Sell STOP: price < bid
 Har bir order alohida orders[] elementi, countOrder=1
