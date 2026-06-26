@@ -151,16 +151,33 @@ TYPE 4 — zone xabarda bor bo'lsa → yuqoridagi zone qoidalariga o't (TYPE 3 b
 Telegram xabarlarni trade signal sifatida tahlil qil — open/close/modify ni o'zing tanla.
 Bu blok yangi entry emas — mavjud orderlarni boshqarish.
 
-SAVE / BE / QISMAN SAVE (muhim — noto'g'ri talqin qilma):
-- "save", "BE", "breakeven", "b/u", "bez ubitka", "qisman save", "partial save" → yangi entry EMAS
-- "qisman save" = avtomatik 50% close EMAS; bu buyruq emas
-- Odatda: type=modify, sl = openPrice (breakeven) — profit himoya qilish
-- Yoki vaziyatga qarab qisman close: type=close + volume (position volume dan kichik)
-- Agar position volume = min lot (masalan 0.01) bo'lsa qisman close mumkin emas → modify BE tanla
-- Qaysi order(lar)ga tegish: reply, kontekst, profit holati, kanal uslubiga qarab o'zing tanla
-- Hamma ochiq pozitsiyani to'liq yopma — faqat xabar aniq "close all", "yoping", "hammasini yop" desa
-- "50%", "yarmini", "half" aniq aytilsa → shu order(lar)da qisman close (volume belgilab)
+SAVE / BE / QISMAN SAVE / PARTIAL CLOSE (muhim — noto'g'ri talqin qilma):
+- "save", "BE", "breakeven", "b/u", "bez ubitka", "qisman save", "partial save",
+  "partial", "qisman", "n% save", "50% close", "yarmini yop", "half close" va o'xshash
+  → yangi entry EMAS; mavjud ochiq pozitsiyalarni boshqar
 - save/BE xabari TYPE 2 entry qoidasi emas — market ochma
+
+Joriy guruhdagi ochiq MARKET pozitsiyalar soni (MAVJUD ORDERLAR, isPosition=true):
+- Faqat shu guruh + signal symbol (symbol aniq bo'lsa) bo'yicha hisobla
+- Reply yoki kontekst bitta orderNumber ko'rsatsa — faqat shu order(lar)ga qo'lla
+
+Qoida (asosiy):
+1) Ochiq market pozitsiya = 1 ta:
+   → type=modify, sl = openPrice (breakeven / b/u)
+   → to'liq close QILMA (faqat xabar aniq "close/yop" desa)
+2) Ochiq market pozitsiya > 1 ta:
+   → holatga qarab type=close + volume (qisman yopish)
+   → foiz aytilmagan bo'lsa taxminan ~50% (position volume × 0.5, min lot dan kichik bo'lmasin)
+   → "30%", "50%", "n%" aytilsa — shu foiz bo'yicha volume hisobla
+   → qaysi order(lar): reply, profit holati, eng eski/yangi, kanal uslubi — o'zing tanla;
+     kerak bo'lsa bir nechta orderda alohida close elementlari ber
+3) Ochiq pozitsiya yo'q (faqat pending limit/stop):
+   → save/BE/partial close uchun is_signal=false yoki faqat tegishli pending modify/cancel
+
+Qo'shimcha:
+- Agar position volume = min lot (masalan 0.01) bo'lsa qisman close mumkin emas → modify BE (sl=openPrice)
+- Hamma ochiq pozitsiyani to'liq yopma — faqat xabar aniq "close all", "yoping", "hammasini yop" desa
+- Hisobot ("men yopdim", "profit oldim") vs buyruq — ajrat; faqat buyruq bo'lsa action ber
 
 TP / SL / CLOSE:
 - "TP hit", "TP1 hit", "TP2 done", "SL hit", "stopped", "done" → type=close yoki modify
@@ -170,8 +187,9 @@ TP / SL / CLOSE:
 - Mavjud orderlarni kontekst + history bilan solishtir; countOrder = orderNumber
 
 MODIFY misollari:
-- Breakeven: {{"type":"modify","countOrder":<orderNumber>,"sl":<openPrice>,"tp":null}}
-- Qisman close: {{"type":"close","countOrder":<orderNumber>,"volume":0.005}} (position volume dan kichik)
+- Breakeven (1 ta pozitsiya): {{"type":"modify","countOrder":<orderNumber>,"sl":<openPrice>,"tp":null}}
+- Qisman close (~50%, ko'p pozitsiya): {{"type":"close","countOrder":<orderNumber>,"volume":0.005}}
+- Qisman close (30%): position volume × 0.3 → volume maydoniga yoz
 - To'liq close: {{"type":"close","countOrder":<orderNumber>}} (volume qo'yma)
 - Pending limit/stop yopish: type=cancel yoki type=close (ikkalasi ham pending ni bekor qiladi)
 
