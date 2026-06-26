@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from telethon import events
 
 from models.chat_message import ChatMessage
+from telegram.chat_message_dispatcher import ChatMessageDispatcher
 from telegram.client import TelegramService
 from telegram.media_extractor import build_chat_message, build_sender_info
 from telegram.message_buffer import MessageBuffer
@@ -26,6 +27,7 @@ class MessageListener:
         self._buffer = message_buffer
         self._on_message = on_message
         self._chat_titles: dict[int, str] = {}
+        self._dispatcher = ChatMessageDispatcher()
 
     async def _resolve_chat_title(self, chat_id: int) -> str:
         if chat_id in self._chat_titles:
@@ -51,7 +53,6 @@ class MessageListener:
                 event.message,
             )
 
-            context = self._buffer.get_context(chat_id)
             chat_title = await self._resolve_chat_title(chat_id)
 
             message = await build_chat_message(
@@ -66,14 +67,23 @@ class MessageListener:
 
             media_tag = f" +{message.media.media_type}" if message.media else ""
             logger.info(
-                "New message in chat %s from %s%s",
+                "New message in chat %s msg=%s from %s%s",
                 chat_id,
+                message.message_id,
                 sender,
                 media_tag,
             )
 
-            await self._on_message(message, context)
-            self._buffer.add(message)
+            async def _handle() -> None:
+                context = self._buffer.get_context(chat_id)
+                await self._on_message(message, context)
+                self._buffer.add(message)
+
+            await self._dispatcher.run_serial(
+                chat_id,
+                message.message_id,
+                _handle,
+            )
 
         logger.info(
             "Listening to %d group(s): %s",
