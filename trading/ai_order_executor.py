@@ -16,6 +16,7 @@ from trading.error_formatter import format_trade_error
 from trading.order_router import OrderRouter
 from trading.partial_close_handler import resolve_close_volume
 from trading.price_normalizer import normalize_price
+from trading.sltp_price_resolver import market_entry_price, resolve_default_sltp_prices
 from trading.symbol_spec_cache import SymbolSpecCache
 from trading.trade_retry import run_trade_with_retry
 from trading.volume_normalizer import round_volume
@@ -186,6 +187,15 @@ class AiOrderExecutor:
         entry_price = normalize_price(action.price, spec)
         stop_loss = normalize_price(action.sl, spec)
         take_profit = normalize_price(action.tp, spec)
+        stop_loss, take_profit = await self._resolve_entry_sltp(
+            connection,
+            symbol,
+            response.side,
+            entry_price,
+            spec,
+            stop_loss,
+            take_profit,
+        )
 
         if order_type != OrderType.MARKET and entry_price is None:
             raise ValueError(f"{order_type.value} order requires price")
@@ -361,6 +371,36 @@ class AiOrderExecutor:
         raw = volume or self._settings.default_volume
         clamped = max(self._settings.min_volume, min(raw, self._settings.max_volume))
         return round_volume(clamped)
+
+    async def _resolve_entry_sltp(
+        self,
+        connection: Any,
+        symbol: str,
+        side: str,
+        entry_price: float | None,
+        spec: dict,
+        stop_loss: float | None,
+        take_profit: float | None,
+    ) -> tuple[float | None, float | None]:
+        if stop_loss is not None and take_profit is not None:
+            return stop_loss, take_profit
+        if self._settings.default_sl_pips <= 0 and self._settings.default_tp_pips <= 0:
+            return stop_loss, take_profit
+
+        price_base = entry_price
+        if price_base is None:
+            quote = await self._spec_cache.get_price(connection, symbol)
+            price_base = market_entry_price(side, quote)
+
+        return resolve_default_sltp_prices(
+            side=side,
+            entry_price=price_base,
+            spec=spec,
+            default_sl_pips=self._settings.default_sl_pips,
+            default_tp_pips=self._settings.default_tp_pips,
+            existing_sl=stop_loss,
+            existing_tp=take_profit,
+        )
 
 
 def _round_volume_for_spec(volume: float, spec: dict) -> float:
