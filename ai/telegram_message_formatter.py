@@ -47,12 +47,29 @@ def format_message_for_ai(
     if message.text:
         lines.append("matn:")
         lines.append(message.text)
-    elif message.media:
-        lines.append(f"matn=(yo'q) | media={message.media.media_type}")
-    else:
+
+    if message.media:
+        media_hint = _media_hint(message.media.media_type)
+        if message.text:
+            lines.append(f"media={message.media.media_type}")
+        else:
+            lines.append(f"matn=(yo'q) | media={message.media.media_type}")
+        if media_hint:
+            lines.append(media_hint)
+    elif not message.text:
         lines.append("matn=(bo'sh)")
 
     return "\n".join(lines)
+
+
+def _media_hint(media_type: str) -> str | None:
+    if media_type == "photo":
+        return (
+            "media_eslatma=chart rasm — levellar, zone, SL/TP, "
+            "oxirgi (latest) narx chizig'ini rasm ichidan o'qi; "
+            "vaqt= bilan solishtir"
+        )
+    return None
 
 
 def format_context_block(context: list[ChatMessage]) -> str:

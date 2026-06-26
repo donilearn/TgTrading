@@ -90,10 +90,36 @@ Quyidagilar trade signal EMAS — reklama, spam, suhbat:
 - Forward qilingan reklama yoki promo post
 - reply_matnda Reklama havolalari (url, @kanal taklif) yoki boshqa loyiha/bot reklama bo'lsa — is_signal=false
 - Umumiy suhbat, kulgi, emoji, shaxsiy fikr, signal bilan bog'liq bo'lmagan gap
-- Faqat narx/emoji bo'lgan lekin SL/TP/yo'nalish/buyruq yo'q va kontekstda signal yo'q
+- Faqat narx/emoji bo'lgan lekin SL/TP/yo'nalish/buyruq yo'q va kontekstda signal yo'q (chart rasmi bundan mustasno — quyidagi CHART RASM bo'limiga qarang)
 - "VIP", "premium", "kurs", "mentor", "copy link" kabi marketing matnlar
-- Agar msg.da rasm keltirilib, unda mavjud orderlar, SL va TP levellari ko'rsatilgan bo'lsa, rasmning vaqti va currrent price levelni inobatga olib order ochish kerak, ya'ni postfactum rasmda vaqt va price joriy real holatga mos kelmasa, signal=false.
-Agar shubha bo'lsa — is_signal=false, reasoning da nima uchun signal emasligini yoz. 
+Agar shubha bo'lsa — is_signal=false, reasoning da nima uchun signal emasligini yoz.
+
+=== CHART RASM SIGNALLARI (photo) ===
+Ba'zi kanallar/guruhlar signalni chart rasmi ko'rinishida beradi: TradingView/MT4/MT5 screenshot, chizilgan levellar, zona, SL/TP chiziqlari.
+Joriy xabarda photo biriktirilgan bo'lsa — rasmni to'liq tahlil qil (matn bo'lmasa ham signal bo'lishi mumkin).
+
+Rasmni qanday o'qish:
+- Xabar vaqti (vaqt=) — signal qachon tashlangan; reasoning da yoz
+- Chartdagi JORIY/LATEST narx — o'ng tomondagi oxirgi shamcha yonidagi narx, price line yoki "current"/"last" label; shu snapshot narxni live bid/ask bilan solishtir
+- Horizontal chiziqlar / label lar → SL, TP (TP1/TP2/...), entry
+- Shaded area / to'rtburchak / quti → zone (zone_low / zone_high)
+- Chart sarlavhasi, watermark, symbol nomi → symbol aniqlash
+- strelka/emoji → yo'nalish
+
+Signal qabul qilish:
+- Rasmda aniq yo'nalish + (entry yoki zone) + kamida SL yoki TP/Target narx ko'rinadigan bo'lsa → is_signal=true
+- TYPE 1/3/4 ni rasm tarkibiga qarab tanla; bir nechta TP chiziq → TYPE 1
+- Matn + rasm birga kelsa — ikkalasini birlashtir; ziddiyat bo'lsa aniqroq manba ustun (odatda matn)
+
+Vaqt va narx muvofiqligi:
+- Chart snapshot vaqti xabar vaqtiga yaqin bo'lsa — levellarni to'g'ridan-to'g'ri ishlat
+- Rasmdagi latest narx live bid/ask dan farq qilsa:
+  • Entry uchun market ochma — limit/stop ni chart levellariga qo'y
+  • Narx allaqachon TP ga yetgan yoki SL buzilgan bo'lsa → is_signal=false (postfactum)
+  • Chart eskirgan lekin zone/levellar hali amal qilsa — limit/stop bilan entry ber
+- Faqat eski screenshot + yangi narx allaqachon zone dan chiqib ketgan + yangi buyruq yo'q → is_signal=false
+
+Reasoning da: rasm tahlil qilinganini, chart latest narx, live bid/ask solishtirish va vaqt farqini qisqa yoz.
 
 === GURUH (TELEGRAM_GROUP_IDS) ===
 Har bir chat_id alohida kanal/guruh; magic = broker identifikatori
