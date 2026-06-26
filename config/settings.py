@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.group_magic import group_magic_map, magic_from_group_id
@@ -31,6 +31,20 @@ class Settings(BaseSettings):
 
     mt5_path: str | None = Field(default=None, description="MT5 terminal64.exe path")
     mt5_login: int
+
+    @field_validator("mt5_path", mode="before")
+    @classmethod
+    def normalize_mt5_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        path = str(value).strip().strip('"').strip("'")
+        if not path:
+            return None
+        # .env da \terminal64 kabi yozuv \t (tab) ga aylanadi
+        tab = "\t"
+        path = path.replace(f"{tab}erminal64", "\\terminal64")
+        path = path.replace(f"{tab}erminal64.exe", "\\terminal64.exe")
+        return path.replace("/", "\\")
     mt5_password: str
     mt5_server: str | None = Field(default=None, description="Broker server name")
     mt5_timeout: int = Field(default=60000, ge=1000, description="Initialize timeout ms")
