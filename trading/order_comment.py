@@ -1,28 +1,31 @@
 from datetime import UTC, datetime
 
 MT5_COMMENT_MAX_LEN = 31
-# MT5 ko'p brokerlarda ':' dan keyingi qismni kesadi — HHMM ishlatamiz (masalan 0531)
-_TIME_FMT = "%H%M"
+# MT5 ko'p brokerlarda ':' dan keyingi qismni kesadi; HHMM ham ba'zida faqat HH ko'rinadi
+_TIME_FMT = "%H-%M"
 
 
 def build_order_comment(channel_name: str, message_time: str | None = None) -> str:
-    """MT5 order comment: kanal nomi + mahalliy vaqt (HHMM)."""
+    """MT5 order comment: mahalliy vaqt (HH-MM) + kanal nomi."""
     time_label = _extract_time_label(message_time) or _local_now_label()
     name = _sanitize_channel_name(channel_name)
-    suffix = f" {time_label}"
-    max_name_len = MT5_COMMENT_MAX_LEN - len(suffix)
+    prefix = f"{time_label} "
+    max_name_len = MT5_COMMENT_MAX_LEN - len(prefix)
     if max_name_len < 1:
         return time_label[:MT5_COMMENT_MAX_LEN]
     if len(name) > max_name_len:
         name = name[:max_name_len].rstrip()
-    return f"{name}{suffix}"
+    return f"{prefix}{name}"
 
 
-def _extract_time_label(message_time: str | None) -> str | None:
-    if not message_time:
+def _extract_time_label(message_time: str | datetime | None) -> str | None:
+    if message_time is None:
         return None
 
-    parsed = _parse_datetime(message_time)
+    if isinstance(message_time, datetime):
+        parsed = message_time
+    else:
+        parsed = _parse_datetime(message_time)
     if parsed is None:
         return None
 
@@ -48,7 +51,18 @@ def _parse_datetime(value: str) -> datetime | None:
         except ValueError:
             continue
 
-    return None
+    try:
+        parsed_time = datetime.strptime(text, "%H:%M")
+    except ValueError:
+        return None
+
+    today = datetime.now().astimezone()
+    return parsed_time.replace(
+        year=today.year,
+        month=today.month,
+        day=today.day,
+        tzinfo=today.tzinfo,
+    )
 
 
 def _local_now_label() -> str:
