@@ -261,7 +261,7 @@ class TradeExecutor:
 
         try:
             options = build_trade_options(
-                symbol, index, magic, signal.is_re_entry,
+                symbol, index, magic, "", None, signal.is_re_entry,
             )
             options = apply_pending_order_expiration(
                 options,

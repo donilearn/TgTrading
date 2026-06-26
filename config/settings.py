@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.group_magic import group_magic_map, magic_from_group_id
@@ -48,6 +48,16 @@ class Settings(BaseSettings):
         ge=0,
         alias="ORDERS_EXPIRATION",
         description="Default pending order expiration in minutes when AI returns null",
+    )
+    default_sl_pips: float = Field(
+        default=300.0,
+        gt=0,
+        validation_alias=AliasChoices("default_SL", "DEFAULT_SL"),
+    )
+    default_tp_pips: float = Field(
+        default=500.0,
+        gt=0,
+        validation_alias=AliasChoices("default_TP", "DEFAULT_TP"),
     )
 
     @property

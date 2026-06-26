@@ -40,6 +40,8 @@ class AiOrderExecutor:
         magic: int,
         existing: list[ExistingOrder],
         max_entries: int | None = None,
+        channel_name: str = "",
+        message_date: str | None = None,
     ) -> list[TradeResult]:
         if not response.is_actionable:
             return [TradeResult(
@@ -63,6 +65,7 @@ class AiOrderExecutor:
                 result = await self._execute_one(
                     metaapi, response, action, magic,
                     existing, entry_index,
+                    channel_name, message_date,
                 )
                 results.append(result)
                 if action_type == "entry":
@@ -101,6 +104,8 @@ class AiOrderExecutor:
         magic: int,
         existing: list[ExistingOrder],
         index: int,
+        channel_name: str = "",
+        message_date: str | None = None,
     ) -> TradeResult:
         symbol = response.symbol or ""
         action_type = action.action_type.lower()
@@ -124,6 +129,7 @@ class AiOrderExecutor:
                     metaapi,
                     lambda conn: self._execute_entry(
                         conn, response, action, volume, magic, index,
+                        channel_name, message_date,
                     ),
                 )
             if action_type == "modify":
@@ -166,6 +172,8 @@ class AiOrderExecutor:
         volume: float,
         magic: int,
         index: int,
+        channel_name: str = "",
+        message_date: str | None = None,
     ) -> TradeResult:
         symbol = response.symbol or ""
         side = _parse_side(response.side)
@@ -176,6 +184,8 @@ class AiOrderExecutor:
         entry_price = normalize_price(action.price, spec)
         stop_loss = normalize_price(action.sl, spec)
         take_profit = normalize_price(action.tp, spec)
+        sl_pips = None if stop_loss is not None else self._settings.default_sl_pips
+        tp_pips = None if take_profit is not None else self._settings.default_tp_pips
 
         if order_type != OrderType.MARKET and entry_price is None:
             raise ValueError(f"{order_type.value} order requires price")
@@ -189,7 +199,9 @@ class AiOrderExecutor:
             stop_loss=stop_loss,
             volume=volume,
         )
-        options = build_trade_options(symbol, index, magic, False)
+        options = build_trade_options(
+            symbol, index, magic, channel_name, message_date, False,
+        )
         options = apply_pending_order_expiration(
             options,
             order_type,
@@ -199,7 +211,7 @@ class AiOrderExecutor:
 
         result = await self._router.place_order(
             connection, signal, volume, entry_price,
-            stop_loss, take_profit, None, None, options,
+            stop_loss, take_profit, sl_pips, tp_pips, options,
             order_type=order_type,
         )
         return TradeResult(

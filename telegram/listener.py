@@ -37,6 +37,9 @@ class MessageListener:
                 event.message,
             )
 
+            chat = await event.get_chat()
+            channel_name = getattr(chat, "title", None) or str(chat_id)
+
             context = self._buffer.get_context(chat_id)
 
             message = await build_chat_message(
@@ -46,6 +49,7 @@ class MessageListener:
                 sender,
                 sender_id=sender_id,
                 sender_display=sender_display,
+                channel_name=channel_name,
             )
 
             media_tag = f" +{message.media.media_type}" if message.media else ""

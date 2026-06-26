@@ -14,6 +14,7 @@ class ChatMessage(BaseModel):
 
     chat_id: int
     message_id: int
+    channel_name: str = ""
     sender: str
     text: str = ""
     media: MediaAttachment | None = None

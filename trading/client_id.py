@@ -1,8 +1,10 @@
 import secrets
 import string
 
+from trading.order_comment_builder import MAX_ORDER_COMMENT_LEN, build_order_comment
+
 STRATEGY_ID = "TG"
-MAX_COMMENT_CLIENT_LEN = 26
+MAX_CLIENT_ID_LEN = 26
 
 
 def build_client_id(symbol: str, order_index: int) -> str:
@@ -18,14 +20,17 @@ def build_trade_options(
     symbol: str,
     order_index: int,
     magic: int,
+    channel_name: str,
+    message_date: str | None,
     is_re_entry: bool = False,
 ) -> dict:
-    comment = "re" if is_re_entry else "tg"
+    del is_re_entry
+    comment = build_order_comment(channel_name, message_date)
     client_id = build_client_id(symbol, order_index)
-
-    max_client_len = MAX_COMMENT_CLIENT_LEN - len(comment)
-    if len(client_id) > max_client_len:
-        client_id = client_id[:max_client_len]
+    if len(client_id) > MAX_CLIENT_ID_LEN:
+        client_id = client_id[:MAX_CLIENT_ID_LEN]
+    if len(comment) > MAX_ORDER_COMMENT_LEN:
+        comment = comment[:MAX_ORDER_COMMENT_LEN]
 
     return {
         "comment": comment,
