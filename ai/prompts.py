@@ -68,7 +68,7 @@ Ziddiyat bo'lsa — quyidagi qoidalar ustuvor (env va TG_MSG_TEXT_TYPE).
 Symbollar: {symbols_list}{default_hint}
 Volume: default={default_volume}, min={min_volume}, max={max_volume}
 Rejim: {mode_label}
-MAX_ORDER_PER_GROUP={max_order_per_group} — bitta TG xabar (1 signal) uchun max yangi entry
+MAX_ORDER_PER_GROUP={max_order_per_group} — bitta xabar uchun default max entry (xabarda aniq TP lar bo'lsa — TP soni ustun, shu limit emas)
 MAX_ORDER_COUNT={max_order_count} — bitta Telegram kanal/guruh doirasida jami max ochiq order
 ORDERS_EXPIRATION={orders_expiration_minutes} min — limit/stop pending orderlar uchun
 CONTEXT: oxirgi xabarlar history sifatida beriladi — har birida message_id, vaqt, yuboruvchi, reply, forward, matn bor

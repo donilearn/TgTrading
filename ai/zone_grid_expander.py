@@ -1,6 +1,10 @@
 import logging
 
-from ai.tp_levels_parser import parse_tp_levels
+from ai.tp_order_count import (
+    reference_price_from_market,
+    resolve_target_entry_count,
+    resolve_tp_levels,
+)
 from ai.zone_bounds_parser import parse_zone_bounds
 from config.settings import Settings
 from models.ai_order_action import AiOrderAction
@@ -21,7 +25,7 @@ def expand_zone_grid_orders(
     message_text: str | None = None,
     market: list[SymbolMarketInfo] | None = None,
 ) -> AiTradeResponse:
-    """Aggressive mode: zone signalini to'liq grid orderlarga kengaytiradi."""
+    """Aggressive mode: zone signalini grid orderlarga kengaytiradi (soni msg TP lariga bog'liq)."""
     if not settings.aggressive_mode or not response.is_signal:
         return response
 
@@ -38,19 +42,28 @@ def expand_zone_grid_orders(
         if item.order_type.lower() in _GRID_ORDER_TYPES
     ]
 
-    reference_price = _reference_price(response.symbol, market)
+    reference_price = reference_price_from_market(response.symbol, market)
     zone = _resolve_zone_bounds(response, grid_entries, message_text, reference_price)
     if zone is None:
         return response
 
     zone_low, zone_high = zone
-    tp_levels = _resolve_tp_levels(message_text, entries, reference_price)
-    channel_remaining = max(0, settings.max_order_count - existing_group_count)
+    tp_levels, tp_from_message = resolve_tp_levels(
+        message_text, entries, reference_price,
+    )
 
-    msg_slots = max(0, settings.effective_max_per_message - len(market_entries))
-    grid_count = min(msg_slots, channel_remaining)
     if tp_levels:
-        grid_count = min(grid_count, len(tp_levels))
+        target_total = resolve_target_entry_count(
+            tp_levels,
+            settings,
+            existing_group_count,
+            tp_from_message=tp_from_message,
+        )
+        grid_count = max(0, target_total - len(market_entries))
+    else:
+        channel_remaining = max(0, settings.max_order_count - existing_group_count)
+        msg_slots = max(0, settings.effective_max_per_message - len(market_entries))
+        grid_count = min(msg_slots, channel_remaining)
 
     if grid_count <= 0:
         return response
@@ -72,24 +85,23 @@ def expand_zone_grid_orders(
         AiOrderAction(
             count_order=1,
             action_type="entry",
-            price=price,
+            price=grid_price,
             sl=template.sl,
-            tp=_tp_for_index(index, tp_levels, template.tp),
+            tp=_tp_for_index(index, tp_levels, template.tp, len(market_entries)),
             order_type=template.order_type,
             volume=volumes[index],
             expiration_minutes=template.expiration_minutes,
         )
-        for index, price in enumerate(grid_prices)
+        for index, grid_price in enumerate(grid_prices)
     ]
 
     logger.info(
-        "Aggressive zone grid: %s-%s → %d orders (was %d limit/stop, %d market) at %s",
+        "Aggressive zone grid: %s-%s → %d grid + %d market (TP count=%s)",
         zone_low,
         zone_high,
         grid_count,
-        len(grid_entries),
         len(market_entries),
-        grid_prices,
+        len(tp_levels) if tp_levels else "n/a",
     )
 
     return response.model_copy(
@@ -119,30 +131,15 @@ def _resolve_zone_bounds(
     return parse_zone_bounds(message_text, reference_price)
 
 
-def _resolve_tp_levels(
-    message_text: str | None,
-    entries: list[AiOrderAction],
-    reference_price: float | None,
-) -> list[float]:
-    parsed = parse_tp_levels(message_text, reference_price)
-    if parsed:
-        return parsed
-
-    seen: list[float] = []
-    for item in entries:
-        if item.tp is None or item.tp in seen:
-            continue
-        seen.append(item.tp)
-    return seen
-
-
 def _tp_for_index(
     index: int,
     tp_levels: list[float],
     fallback: float | None,
+    market_offset: int = 0,
 ) -> float | None:
-    if tp_levels and index < len(tp_levels):
-        return tp_levels[index]
+    tp_index = index + market_offset
+    if tp_levels and tp_index < len(tp_levels):
+        return tp_levels[tp_index]
     if tp_levels:
         return tp_levels[-1]
     return fallback
@@ -161,19 +158,3 @@ def _default_template(
         order_type="limit",
         volume=settings.default_volume,
     )
-
-
-def _reference_price(
-    symbol: str | None,
-    market: list[SymbolMarketInfo] | None,
-) -> float | None:
-    if not symbol or not market:
-        return None
-
-    for item in market:
-        if item.symbol != symbol:
-            continue
-        if item.bid is not None and item.ask is not None:
-            return (item.bid + item.ask) / 2
-        return item.bid or item.ask
-    return None

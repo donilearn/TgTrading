@@ -14,10 +14,15 @@ class OrderLimitTracker:
         chat_id: int,
         order_count: int,
         existing_channel_count: int,
+        *,
+        msg_tp_count: int | None = None,
     ) -> tuple[bool, str, int]:
-        """Cap per message (MAX_ORDER_PER_GROUP) and per channel (MAX_ORDER_COUNT)."""
+        """Cap per channel (MAX_ORDER_COUNT). Xabar TP lari bo'lsa per-msg limit o'tkaziladi."""
         channel_remaining = max(0, self._max_per_channel - existing_channel_count)
-        msg_cap = max(0, self._max_per_message)
+        if msg_tp_count and msg_tp_count > 0:
+            msg_cap = msg_tp_count
+        else:
+            msg_cap = max(0, self._max_per_message)
 
         remaining = min(order_count, msg_cap, channel_remaining)
 
@@ -29,9 +34,14 @@ class OrderLimitTracker:
             ), 0
 
         if order_count > remaining:
+            limit_label = (
+                f"msg TP count {msg_tp_count}"
+                if msg_tp_count
+                else f"msg max {self._max_per_message}"
+            )
             return True, (
                 f"Channel {chat_id}: planned {order_count}, placing {remaining} "
-                f"(msg max {self._max_per_message}, "
+                f"({limit_label}, "
                 f"channel {existing_channel_count}/{self._max_per_channel})"
             ), remaining
 

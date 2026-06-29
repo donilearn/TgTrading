@@ -34,7 +34,9 @@ def expand_tp_entry_orders(
         return response
 
     reference_price = reference_price_from_market(response.symbol, market)
-    tp_levels = resolve_tp_levels(message_text, entries, reference_price)
+    tp_levels, tp_from_message = resolve_tp_levels(
+        message_text, entries, reference_price,
+    )
     if len(tp_levels) <= 1:
         return response
 
@@ -42,6 +44,7 @@ def expand_tp_entry_orders(
         tp_levels,
         settings,
         existing_group_count,
+        tp_from_message=tp_from_message,
     )
     if target_count <= 0:
         return response
@@ -79,10 +82,11 @@ def expand_tp_entry_orders(
     ]
 
     logger.info(
-        "TP entry expand: %d TP → %d entry order(s) (was %d)",
+        "TP entry expand: %d TP → %d entry order(s) (was %d, from_msg=%s)",
         len(tp_levels),
         target_count,
         len(entries),
+        tp_from_message,
     )
     return response.model_copy(update={"orders": management + expanded})
 
