@@ -11,7 +11,7 @@ def patch_existing_positions_sltp(
     response: AiTradeResponse,
     existing: list[ExistingOrder],
 ) -> AiTradeResponse:
-    """Signalda SL/TP berilsa mavjud pozitsiya/pending orderlarni yangilaydi."""
+    """Signalda SL/TP berilsa mavjud ochiq pozitsiyalarga modify qo'shadi (pending emas)."""
     if not response.is_signal or not response.symbol:
         return response
 
@@ -23,6 +23,8 @@ def patch_existing_positions_sltp(
     modify_orders: list[AiOrderAction] = []
 
     for item in existing:
+        if not item.is_position:
+            continue
         if item.symbol != response.symbol:
             continue
         if item.side.lower() != side:
