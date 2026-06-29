@@ -7,6 +7,10 @@ def build_trade_options(
     message_time: str | None = None,
 ) -> dict:
     return {
-        "comment": build_order_comment(channel_name, message_time),
+        "comment": build_order_comment(
+            channel_name,
+            message_time,
+            fallback_label=f"G{magic}",
+        ),
         "magic": magic,
     }
