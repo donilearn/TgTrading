@@ -88,11 +88,50 @@ class TradingPipeline:
                 bool(message.media),
             )
 
-            existing, market, _global_count = await self._context_loader.load(
-                magic,
+            response = await self._analyzer.analyze_message(message, context)
+
+            for item in response.orders:
+                logger.info(
+                    "Analysis (LLM) [%s]: countOrder=%s type=%s price=%s sl=%s tp=%s orderType=%s vol=%s",
+                    message.chat_id,
+                    item.count_order,
+                    item.action_type,
+                    item.price,
+                    item.sl,
+                    item.tp,
+                    item.order_type,
+                    item.volume,
+                )
+            logger.info(
+                "Analysis (LLM) [%s]: signal=%s symbol=%s side=%s orders=%d — %s",
                 message.chat_id,
-                self._settings.group_magic_list,
+                response.is_signal,
+                response.symbol,
+                response.side,
+                len(response.orders),
+                response.reasoning,
             )
+
+            if not response.is_signal:
+                return
+
+            try:
+                await self._metaapi.ensure_session(
+                    self._settings.parsed_allowed_symbols,
+                )
+                existing, market, _global_count = await self._context_loader.load(
+                    magic,
+                    message.chat_id,
+                    self._settings.group_magic_list,
+                )
+            except Exception as exc:
+                logger.error(
+                    "MetaAPI session failed for chat=%s — trade skipped: %s",
+                    message.chat_id,
+                    exc,
+                )
+                return
+
             logger.info(
                 "Context loaded chat=%s orders=%d market_symbols=%d",
                 message.chat_id,
@@ -100,8 +139,11 @@ class TradingPipeline:
                 len(market),
             )
 
-            response = await self._analyzer.analyze(
-                message, context, existing, market,
+            response = self._analyzer.enrich_with_broker_context(
+                response,
+                existing,
+                market,
+                message.text,
             )
 
             for item in response.orders:
@@ -128,6 +170,7 @@ class TradingPipeline:
             )
 
             if not response.is_actionable:
+                self._metaapi.touch_session()
                 return
 
             planned_entries = self._executor.count_entry_orders(response)
@@ -180,6 +223,8 @@ class TradingPipeline:
             if entries_placed:
                 self._limit_tracker.record(message.chat_id, entries_placed)
 
+            self._metaapi.touch_session()
+
         except Exception:
             logger.exception(
                 "Failed to handle message from %s in %s",
@@ -189,11 +234,14 @@ class TradingPipeline:
 
     async def start(self) -> None:
         await self._telegram.start()
-        await self._metaapi.connect()
-        await self._metaapi.subscribe_market_data(
-            self._settings.parsed_allowed_symbols,
-        )
-        self._metaapi_keeper.start()
+        if self._settings.metaapi_keeper_enabled:
+            self._metaapi_keeper.start()
+        else:
+            logger.info(
+                "MetaAPI on-demand mode — connects on signal only "
+                "(idle disconnect=%ss)",
+                self._settings.metaapi_idle_disconnect_sec,
+            )
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"

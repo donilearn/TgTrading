@@ -43,9 +43,26 @@ class SignalAnalyzer:
         self,
         message: ChatMessage,
         context: list[ChatMessage],
-        existing_orders: list[ExistingOrder],
-        market: list[SymbolMarketInfo],
+        existing_orders: list[ExistingOrder] | None = None,
+        market: list[SymbolMarketInfo] | None = None,
     ) -> AiTradeResponse:
+        """Gemini tahlil + ixtiyoriy post-process (broker konteksti bilan)."""
+        result = await self.analyze_message(message, context)
+        if existing_orders is None and market is None:
+            return result
+        return self.enrich_with_broker_context(
+            result,
+            existing_orders or [],
+            market or [],
+            message.text,
+        )
+
+    async def analyze_message(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+    ) -> AiTradeResponse:
+        """Faqat Gemini — MetaAPI ulanishsiz."""
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
 
@@ -55,7 +72,7 @@ class SignalAnalyzer:
             response_schema=AiTradeResponse,
         )
         contents = build_analysis_contents(
-            message, context, existing_orders, market, self._settings,
+            message, context, [], [], self._settings,
         )
 
         primary_model = self._gemini.model
@@ -80,18 +97,7 @@ class SignalAnalyzer:
             log_gemini_response(message.chat_id, used_model, response)
 
             result = response.parsed or AiTradeResponse.model_validate_json(response.text)
-            result = self._validate_symbol(result)
-            result = remove_redundant_market_entries(result, existing_orders)
-            result = patch_existing_positions_sltp(result, existing_orders)
-            result = apply_default_sltp_to_entries(result, self._settings, market)
-            result = expand_zone_grid_orders(
-                result,
-                self._settings,
-                len(existing_orders),
-                message_text=message.text,
-                market=market,
-            )
-            return result
+            return self._validate_symbol(result)
 
         except Exception as exc:
             log_gemini_error(message.chat_id, primary_model, exc)
@@ -100,6 +106,29 @@ class SignalAnalyzer:
                 is_signal=False,
                 reasoning=f"Analysis error: {exc}",
             )
+
+    def enrich_with_broker_context(
+        self,
+        result: AiTradeResponse,
+        existing_orders: list[ExistingOrder],
+        market: list[SymbolMarketInfo],
+        message_text: str | None,
+    ) -> AiTradeResponse:
+        """Broker snapshot bilan post-process (MetaAPI ulanishdan keyin)."""
+        if not result.is_signal:
+            return result
+
+        result = remove_redundant_market_entries(result, existing_orders)
+        result = patch_existing_positions_sltp(result, existing_orders)
+        result = apply_default_sltp_to_entries(result, self._settings, market)
+        result = expand_zone_grid_orders(
+            result,
+            self._settings,
+            len(existing_orders),
+            message_text=message_text,
+            market=market,
+        )
+        return result
 
     def _validate_symbol(self, result: AiTradeResponse) -> AiTradeResponse:
         if not result.symbol:
