@@ -49,6 +49,7 @@ class MT5ConnectionKeeper:
             if self._service.is_ready:
                 continue
 
+            self._service.mark_unready()
             logger.warning("MT5 session unhealthy — reconnecting")
             try:
                 await self._service.reconnect_all()

@@ -30,7 +30,10 @@ class MT5Connection:
         if not self._connected:
             return False
         info = mt5.terminal_info()
-        return info is not None and info.connected
+        alive = info is not None and info.connected
+        if not alive:
+            self._connected = False
+        return alive
 
     def connect(self) -> None:
         init_kwargs: dict[str, Any] = {

@@ -36,6 +36,10 @@ class MT5Service:
     def is_ready(self) -> bool:
         return self._connection.is_connected
 
+    def mark_unready(self) -> None:
+        """Ulanish uzilganda stale _ready flag ni tozalash."""
+        self._ready.clear()
+
     async def connect(self) -> None:
         await asyncio.to_thread(self._connection.connect)
         for symbol in self._settings.parsed_allowed_symbols:
@@ -50,10 +54,17 @@ class MT5Service:
 
     async def ensure_ready(self) -> None:
         if self._connection.is_connected:
+            if not self._ready.is_set():
+                self._ready.set()
             return
+
+        self._ready.clear()
         await self._ready.wait()
+        if not self._connection.is_connected:
+            raise RuntimeError("MT5 not connected")
 
     async def reconnect_all(self) -> None:
+        self._ready.clear()
         await asyncio.to_thread(self._connection.reconnect)
         for symbol in self._settings.parsed_allowed_symbols:
             from trading.mt5.symbol_helper import ensure_symbol

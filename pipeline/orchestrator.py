@@ -4,7 +4,7 @@ import logging
 
 from ai.analyzer import SignalAnalyzer
 from ai.gemini_client import GeminiClient
-from ai.tp_order_count import message_tp_levels, reference_price_from_market
+from ai.tp_order_count import message_tp_level_count, reference_price_from_market
 from config.settings import Settings
 from models.chat_message import ChatMessage
 from telegram.client import TelegramService
@@ -135,14 +135,13 @@ class TradingPipeline:
 
             if planned_entries > 0:
                 ref_price = reference_price_from_market(response.symbol, market)
-                msg_tps = message_tp_levels(message.text, ref_price)
-                msg_tp_count = len(msg_tps) if msg_tps else None
+                msg_tp_override = message_tp_level_count(message.text, ref_price)
 
                 allowed, limit_msg, to_place = self._limit_tracker.can_place(
                     message.chat_id,
                     planned_entries,
                     existing_group_count,
-                    msg_tp_count=msg_tp_count,
+                    msg_tp_override=msg_tp_override,
                 )
                 if not allowed:
                     logger.info("Trade skipped: %s", limit_msg)

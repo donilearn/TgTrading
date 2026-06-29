@@ -15,12 +15,16 @@ class OrderLimitTracker:
         order_count: int,
         existing_channel_count: int,
         *,
-        msg_tp_count: int | None = None,
+        msg_tp_override: int | None = None,
     ) -> tuple[bool, str, int]:
-        """Cap per channel (MAX_ORDER_COUNT). Xabar TP lari bo'lsa per-msg limit o'tkaziladi."""
+        """Cap per channel (MAX_ORDER_COUNT).
+
+        msg_tp_override: xabar matnidagi aniq TP lar soni (>0).
+            None — MAX_ORDER_PER_GROUP limiti qo'llanadi.
+        """
         channel_remaining = max(0, self._max_per_channel - existing_channel_count)
-        if msg_tp_count and msg_tp_count > 0:
-            msg_cap = msg_tp_count
+        if msg_tp_override is not None:
+            msg_cap = max(0, msg_tp_override)
         else:
             msg_cap = max(0, self._max_per_message)
 
@@ -35,8 +39,8 @@ class OrderLimitTracker:
 
         if order_count > remaining:
             limit_label = (
-                f"msg TP count {msg_tp_count}"
-                if msg_tp_count
+                f"msg TP count {msg_tp_override}"
+                if msg_tp_override is not None
                 else f"msg max {self._max_per_message}"
             )
             return True, (

@@ -14,6 +14,16 @@ def message_tp_levels(
     return parse_tp_levels(message_text, reference_price)
 
 
+def message_tp_level_count(    message_text: str | None,
+    reference_price: float | None = None,
+) -> int | None:
+    """Xabardagi TP lar soni; yo'q bo'lsa None (default limit)."""
+    levels = message_tp_levels(message_text, reference_price)
+    if not levels:
+        return None
+    return len(levels)
+
+
 def resolve_tp_levels(
     message_text: str | None,
     entries: list[AiOrderAction],
