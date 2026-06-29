@@ -10,16 +10,29 @@ _TP_SUPER = re.compile(
     r"TP\s*([¹²³⁴⁵⁶⁷⁸⁹])\s*:?\s*(\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
-_TP_NUM = re.compile(r"TP\s*(\d+)\s*:?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+# TP1: 4033 yoki TP1 4033 (level + narx)
+_TP_LEVEL_PRICE = re.compile(
+    r"\bTP\s*(\d{1,2})\s*(?:[:：]\s*|\s+)(\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+# Har bir qator: "Tp 4033" (faqat narx, level yo'q)
+_TP_PRICE_LINE = re.compile(
+    r"^\s*(?:TP|take\s*profit)\s*:?\s*(\d+(?:\.\d+)?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def parse_tp_levels(
     text: str | None,
     reference_price: float | None = None,
 ) -> list[float]:
-    """Xabardan TP¹..TP⁹ va TP1..TPn levellarini tartib bilan qaytaradi."""
+    """Xabardan TP narxlarini tartib bilan qaytaradi."""
     if not text:
         return []
+
+    line_prices = _parse_tp_price_lines(text, reference_price)
+    if line_prices:
+        return line_prices
 
     indexed: dict[int, float] = {}
 
@@ -28,7 +41,7 @@ def parse_tp_levels(
         price = resolve_short_price(float(match.group(2)), reference_price)
         indexed[level] = price
 
-    for match in _TP_NUM.finditer(text):
+    for match in _TP_LEVEL_PRICE.finditer(text):
         level = int(match.group(1))
         price = resolve_short_price(float(match.group(2)), reference_price)
         indexed[level] = price
@@ -37,3 +50,14 @@ def parse_tp_levels(
         return []
 
     return [indexed[level] for level in sorted(indexed)]
+
+
+def _parse_tp_price_lines(
+    text: str,
+    reference_price: float | None,
+) -> list[float]:
+    prices: list[float] = []
+    for match in _TP_PRICE_LINE.finditer(text):
+        price = resolve_short_price(float(match.group(1)), reference_price)
+        prices.append(price)
+    return prices
