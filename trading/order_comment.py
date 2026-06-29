@@ -1,8 +1,17 @@
 from datetime import UTC, datetime
 
-MT5_COMMENT_MAX_LEN = 31
-# MT5 ko'p brokerlarda ':' dan keyingi qismni kesadi; HHMM ham ba'zida faqat HH ko'rinadi
+# XM va ko'p brokerlar order_send da 31 emas, 29 belgigacha qabul qiladi
+MT5_COMMENT_MAX_LEN = 29
 _TIME_FMT = "%H-%M"
+
+
+def sanitize_mt5_comment(text: str, *, fallback: str = "TG") -> str:
+    """MT5 order_send uchun xavfsiz comment (uzunlik + belgilar)."""
+    cleaned = text.replace(":", " ").replace(";", " ")
+    cleaned = " ".join(cleaned.split())
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:MT5_COMMENT_MAX_LEN]
 
 
 def build_order_comment(channel_name: str, message_time: str | None = None) -> str:
@@ -12,10 +21,10 @@ def build_order_comment(channel_name: str, message_time: str | None = None) -> s
     prefix = f"{time_label} "
     max_name_len = MT5_COMMENT_MAX_LEN - len(prefix)
     if max_name_len < 1:
-        return time_label[:MT5_COMMENT_MAX_LEN]
+        return sanitize_mt5_comment(time_label)
     if len(name) > max_name_len:
         name = name[:max_name_len].rstrip()
-    return f"{prefix}{name}"
+    return sanitize_mt5_comment(f"{prefix}{name}")
 
 
 def _extract_time_label(message_time: str | datetime | None) -> str | None:

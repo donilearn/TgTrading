@@ -5,6 +5,7 @@ import MetaTrader5 as mt5
 
 from trading.mt5.filling_resolver import resolve_filling_mode
 from trading.mt5.symbol_helper import ensure_symbol, get_price_dict, normalize_volume
+from trading.order_comment import sanitize_mt5_comment
 
 
 def build_market_order(
@@ -144,7 +145,7 @@ def build_close_position(
         "price": price,
         "deviation": 20,
         "magic": pos.magic,
-        "comment": (comment or "close")[:31],
+        "comment": sanitize_mt5_comment(comment or "close"),
         "type_time": mt5.ORDER_TIME_GTC,
     }
     request["type_filling"] = resolve_filling_mode(pos.symbol, request)
@@ -186,7 +187,7 @@ def _base_request(symbol: str, volume: float, options: dict | None) -> dict:
         "symbol": symbol,
         "volume": normalize_volume(symbol, volume),
         "deviation": 20,
-        "comment": str(opts.get("comment", "TG"))[:31],
+        "comment": sanitize_mt5_comment(str(opts.get("comment", "TG"))),
         "type_time": mt5.ORDER_TIME_GTC,
     }
     magic = opts.get("magic")
