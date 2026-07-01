@@ -1,12 +1,15 @@
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from config.settings import Settings
 from models.existing_order import ExistingOrder
 from models.symbol_market_info import SymbolMarketInfo
 from trading.existing_orders_service import ExistingOrdersService
 from trading.metaapi.terminal_reader import MetaApiTerminalReader
-from trading.mt5.service import MT5Service
+
+if TYPE_CHECKING:
+    from trading.mt5.service import MT5Service
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +47,7 @@ class TradingContextLoader:
         chat_id: int,
         group_magics: list[int],
     ) -> tuple[list[ExistingOrder], list[SymbolMarketInfo], int]:
-        service: MT5Service = self._trading
+        service: "MT5Service" = self._trading
         snapshot = await service.fetch_snapshot()
         existing = self._existing_orders.from_snapshot(snapshot, magic)
         symbols = set(self._settings.parsed_allowed_symbols)
