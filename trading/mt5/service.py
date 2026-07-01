@@ -119,8 +119,7 @@ class MT5Service:
                     raise
                 logger.warning("MT5 operation failed, reconnecting: %s", exc)
 
-        self.mark_unready()
-        await self.ensure_ready()
+        await self.reconnect_all()
         async with self._operation_lock:
             return await operation(self._adapter)
 
