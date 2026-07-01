@@ -101,6 +101,15 @@ class Settings(BaseSettings):
         alias="AUTO_BE_PIPS",
         description="Har xabar kelganda profit shu pip dan oshsa SL=openPrice (0=o'chirilgan)",
     )
+    log_dir: str = Field(default="logs", alias="LOG_DIR")
+    log_retention_days: int = Field(
+        default=30,
+        ge=1,
+        alias="LOG_RETENTION_DAYS",
+        description="Kunlik log fayllarini necha kun saqlash",
+    )
+    log_to_file: bool = Field(default=True, alias="LOG_TO_FILE")
+    log_to_console: bool = Field(default=True, alias="LOG_TO_CONSOLE")
 
     @property
     def max_orders_per_message(self) -> int:

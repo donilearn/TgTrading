@@ -1,22 +1,11 @@
 import argparse
 import asyncio
 import logging
-import sys
 
 from config.backend_validation import validate_backend_settings
+from config.logging_setup import setup_logging
 from config.settings import get_settings
 from pipeline.orchestrator import TradingPipeline
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-
-logging.getLogger("engineio.client").setLevel(logging.ERROR)
-logging.getLogger("socketio.client").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("google_genai.models").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +31,12 @@ def _asyncio_exception_handler(_loop, context: dict) -> None:
 async def main() -> None:
     args = _parse_args()
     settings = get_settings()
+    setup_logging(
+        log_dir=settings.log_dir,
+        retention_days=settings.log_retention_days,
+        console=settings.log_to_console,
+        file_logging=settings.log_to_file,
+    )
     validate_backend_settings(settings, win_mode=args.win)
 
     loop = asyncio.get_running_loop()
