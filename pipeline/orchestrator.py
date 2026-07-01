@@ -10,6 +10,7 @@ from models.chat_message import ChatMessage
 from telegram.client import TelegramService
 from telegram.listener import MessageListener
 from telegram.message_buffer import MessageBuffer
+from trading.auto_breakeven_service import AutoBreakevenService
 from trading.ai_order_executor import AiOrderExecutor
 from trading.client import MT5Service
 from trading.mt5.connection_keeper import MT5ConnectionKeeper
@@ -41,6 +42,7 @@ class TradingPipeline:
             max_per_message=settings.effective_max_per_message,
         )
         self._executor = AiOrderExecutor(settings)
+        self._auto_breakeven = AutoBreakevenService(settings)
         self._existing_orders = ExistingOrdersService()
         self._context_loader = TradingContextLoader(
             self._mt5,
@@ -100,6 +102,16 @@ class TradingPipeline:
                 message.chat_id,
                 self._settings.group_magic_list,
             )
+
+            if await self._auto_breakeven.apply_on_message(
+                self._mt5, existing, market,
+            ):
+                existing, market, _global_count = await self._context_loader.load(
+                    magic,
+                    message.chat_id,
+                    self._settings.group_magic_list,
+                )
+
             logger.info(
                 "Context loaded chat=%s orders=%d market_symbols=%d",
                 message.chat_id,

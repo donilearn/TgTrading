@@ -75,6 +75,12 @@ class Settings(BaseSettings):
         alias="DEFAULT_TP_PIPS",
         description="Signalda TP yo'q bo'lsa entry dan pip masofasi (0=o'chirilgan)",
     )
+    auto_be_pips: float = Field(
+        default=100,
+        ge=0,
+        alias="AUTO_BE_PIPS",
+        description="Har xabar kelganda profit shu pip dan oshsa SL=openPrice (0=o'chirilgan)",
+    )
 
     @property
     def max_orders_per_message(self) -> int:

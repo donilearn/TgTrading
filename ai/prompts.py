@@ -190,6 +190,13 @@ Qo'shimcha:
 
 TP / SL / CLOSE:
 - "TP hit", "TP1 hit", "TP2 done", "SL hit", "stopped", "done" → type=close yoki modify
+- QISMAN TP HIT (TP1 DONE, TP2 DONE, TP3 DONE, ...):
+  • Faqat xabarda aytilgan TP raqamiga mos BITTA order/pozitsiyani close
+  • Reply/signaldagi TP ro'yxatidan qaysi TP hit ekanini aniqla (TP1→birinchi TP narx, TP2→ikkinchi, ...)
+  • Qolgan pending limit orderlar (keyingi TP lar) OCHIQ qolsin — cancel QILMA
+  • "TP2 DONE" / "RUNNING IN PROFIT" ≠ signal tugadi; TP3/TP4 hali pending bo'lsa ularni saqla
+  • Barcha pending cancel faqat: "close all", "hammasini yop", "signal cancel/invalid", yoki aniq barcha TP lar hit ✅
+- Tahrir faqat hashtag/typo (masalan BUY→SELL) bo'lsa va trade maqsadi o'zgarmasa → orders=[] yoki avvalgi action takrorlanmasin
 - "close", "yoping" (aniq buyruq) → type=close
 - Hisobot ("men yopdim", "profit oldim") vs buyruq — ajrat; faqat buyruq bo'lsa action ber
 - "wait", "kuting", "hozir kirmang" → is_signal=false
