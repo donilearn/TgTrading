@@ -15,9 +15,9 @@ _TP_LEVEL_PRICE = re.compile(
     r"\bTP\s*(\d{1,2})\s*(?:[:：]\s*|\s+)(\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
-# Har bir qator: "Tp 4033" (faqat narx, level yo'q)
+# Har bir qator: "Tp 4033" yoki "☑️TP 4018" (emoji/belgi oldida bo'lishi mumkin)
 _TP_PRICE_LINE = re.compile(
-    r"^\s*(?:TP|take\s*profit)\s*:?\s*(\d+(?:\.\d+)?)\s*$",
+    r"^\s*(?:[^\w]*\s*)?(?:TP|take\s*profit)\s*:?\s*(\d+(?:\.\d+)?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 

@@ -1,5 +1,6 @@
 import logging
 
+from ai.tp_order_count import message_tp_level_count
 from models.ai_trade_response import AiTradeResponse
 from models.existing_order import ExistingOrder
 
@@ -9,9 +10,13 @@ logger = logging.getLogger(__name__)
 def remove_redundant_market_entries(
     response: AiTradeResponse,
     existing: list[ExistingOrder],
+    message_text: str | None = None,
 ) -> AiTradeResponse:
-    """Zone signali kelganda mavjud pozitsiya bo'lsa qo'shimcha market entry ni olib tashlaydi."""
+    """Bitta market entry signali + mavjud pozitsiya bo'lsa qo'shimcha market entry ni olib tashlaydi."""
     if not response.is_signal or not response.symbol:
+        return response
+
+    if (message_tp_level_count(message_text) or 0) >= 2:
         return response
 
     side = response.side.lower()
