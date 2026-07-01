@@ -53,6 +53,8 @@ class SignalAnalyzer:
         context: list[ChatMessage],
         existing_orders: list[ExistingOrder],
         market: list[SymbolMarketInfo],
+        *,
+        is_edit: bool = False,
     ) -> AiTradeResponse:
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
@@ -71,6 +73,7 @@ class SignalAnalyzer:
 
         return await self._analyze_with_gemini(
             analysis_message, context, existing_orders, market,
+            is_edit=is_edit,
         )
 
     async def _analyze_with_gemini(
@@ -79,6 +82,8 @@ class SignalAnalyzer:
         context: list[ChatMessage],
         existing_orders: list[ExistingOrder],
         market: list[SymbolMarketInfo],
+        *,
+        is_edit: bool = False,
     ) -> AiTradeResponse:
         config = types.GenerateContentConfig(
             system_instruction=self._system_prompt,
@@ -87,6 +92,7 @@ class SignalAnalyzer:
         )
         contents = build_gemini_contents(
             message, context, existing_orders, market, self._settings,
+            is_edit=is_edit,
         )
         primary_model = self._gemini.model
         log_ai_request(

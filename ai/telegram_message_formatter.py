@@ -6,9 +6,15 @@ def format_message_for_ai(
     *,
     index: int | None = None,
     is_current: bool = False,
+    is_edit: bool = False,
 ) -> str:
     lines: list[str] = []
-    header = "JORIY XABAR" if is_current else "XABAR"
+    if is_current and is_edit:
+        header = "TAHRIRLANGAN JORIY XABAR"
+    elif is_current:
+        header = "JORIY XABAR"
+    else:
+        header = "XABAR"
     if index is not None:
         lines.append(f"--- {index}. {header} ---")
     else:

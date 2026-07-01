@@ -13,9 +13,12 @@ def build_gemini_contents(
     existing_orders: list[ExistingOrder],
     market: list[SymbolMarketInfo],
     settings: Settings,
+    *,
+    is_edit: bool = False,
 ) -> list:
     user_text = build_analysis_user_text(
         message, context, existing_orders, market, settings,
+        is_edit=is_edit,
     )
     parts: list = [types.Part.from_text(text=user_text)]
 

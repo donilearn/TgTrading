@@ -62,6 +62,8 @@ class TradingPipeline:
         self,
         message: ChatMessage,
         context: list[ChatMessage],
+        *,
+        is_edit: bool = False,
     ) -> None:
         if self._shutting_down or self._stopped:
             logger.info("Ignoring message during shutdown from %s", message.chat_id)
@@ -69,7 +71,7 @@ class TradingPipeline:
 
         self._inflight_messages += 1
         try:
-            await self._process_message(message, context)
+            await self._process_message(message, context, is_edit=is_edit)
         finally:
             self._inflight_messages -= 1
 
@@ -77,13 +79,18 @@ class TradingPipeline:
         self,
         message: ChatMessage,
         context: list[ChatMessage],
+        *,
+        is_edit: bool = False,
     ) -> None:
         try:
             magic = self._settings.get_group_magic(message.chat_id)
+            edit_tag = " (edited)" if is_edit else ""
             logger.info(
-                "Processing message chat=%s magic=%s text=%r media=%s",
+                "Processing message%s chat=%s magic=%s msg=%s text=%r media=%s",
+                edit_tag,
                 message.chat_id,
                 magic,
+                message.message_id,
                 (message.text or "")[:120],
                 bool(message.media),
             )
@@ -102,6 +109,7 @@ class TradingPipeline:
 
             response = await self._analyzer.analyze(
                 message, context, existing, market,
+                is_edit=is_edit,
             )
 
             for item in response.orders:

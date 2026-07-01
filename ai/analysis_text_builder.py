@@ -14,6 +14,7 @@ def build_analysis_user_text(
     settings: Settings,
     *,
     media_note: str | None = None,
+    is_edit: bool = False,
 ) -> str:
     magic = settings.get_group_magic(message.chat_id)
     blocks = [
@@ -30,7 +31,7 @@ def build_analysis_user_text(
     if context_block:
         blocks.append(context_block)
 
-    current = format_message_for_ai(message, is_current=True)
+    current = format_message_for_ai(message, is_current=True, is_edit=is_edit)
     blocks.append(f"{current}\n\nmagic={magic}")
 
     if media_note:

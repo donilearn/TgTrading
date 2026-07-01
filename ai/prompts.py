@@ -83,6 +83,14 @@ REPLY muhim:
 - Joriy xabar faqat reply ga izoh bo'lishi mumkin ("kuting", "BE", "yoping", "TP1 hit")
 - Reply + qisqa matn → avval reply kontekstini signal bilan solishtir
 
+TAHRIRLANGAN XABAR (TAHRIRLANGAN JORIY XABAR / tahrirlangan=):
+- Kanal avval yuborgan xabarni keyinroq tahrirlagan — yangi matn/SL/TP/entry bilan qayta tahlil qil
+- MAVJUD ORDERLAR ni ko'rib chiq: allaqachon ochilgan entry/pozitsiya bo'lsa yangi duplicate entry ochma
+- Tahrir faqat SL/TP qo'shsa yoki o'zgartirsa → type=modify (orderNumber bo'yicha) yoki patch qilinadigan SL/TP
+- Tahrir signalni bekor qilsa ("cancel", "invalid") → type=cancel yoki type=close kerakli orderlar uchun
+- Tahrir yangi TP qo'shsa va hali ochilmagan entry kerak bo'lsa — faqat yetishmayotgan orderlar uchun entry
+- Reasoning da tahrir ekanini va mavjud orderlar bilan sync qanday qilinganini qisqa yoz
+
 === SIGNAL EMAS (is_signal=false) ===
 Quyidagilar trade signal EMAS — reklama, spam, suhbat:
 - Broker/kanal reklama, promokod, referral, "obuna bo'ling", giveaway, cashback
