@@ -5,7 +5,7 @@ from models.order_plan import OrderPlan
 from models.signal import SignalAnalysis
 from models.signal_type import SignalType
 from models.trade_result import TradeResult
-from trading.client import MT5Service
+from trading.mt5.service import MT5Service
 from trading.client_id import build_trade_options
 from trading.order_expiration_builder import apply_pending_order_expiration
 from trading.error_formatter import format_trade_error

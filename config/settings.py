@@ -84,13 +84,13 @@ class Settings(BaseSettings):
         description="Default pending order expiration in minutes when AI returns null",
     )
     default_sl_pips: float = Field(
-        default=500,
+        default=5000,
         ge=0,
         alias="DEFAULT_SL_PIPS",
         description="Signalda SL yo'q bo'lsa entry dan pip masofasi (0=o'chirilgan)",
     )
     default_tp_pips: float = Field(
-        default=1000,
+        default=10000,
         ge=0,
         alias="DEFAULT_TP_PIPS",
         description="Signalda TP yo'q bo'lsa entry dan pip masofasi (0=o'chirilgan)",
