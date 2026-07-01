@@ -1,14 +1,22 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 from config.settings import Settings
 from models.symbol_market_info import SymbolMarketInfo
 from trading.mt5.connection import MT5Connection
 from trading.mt5.symbol_helper import get_price_dict, get_spec_dict
 from trading.mt5.trading_adapter import MT5TradingAdapter
+from trading.trade_retry import is_retryable_trade_error
 from trading.trading_snapshot import TradingSnapshot
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+_WAIT_READY_TIMEOUT_SEC = 45.0
+_RECONNECT_RETRY_DELAY_SEC = 2.0
 
 
 class MT5ApiFacade:
@@ -26,6 +34,7 @@ class MT5Service:
         self._adapter = MT5TradingAdapter(self._connection)
         self._ready = asyncio.Event()
         self._operation_lock = asyncio.Lock()
+        self._reconnect_lock = asyncio.Lock()
         self.api = MT5ApiFacade()
 
     @property
@@ -58,20 +67,59 @@ class MT5Service:
                 self._ready.set()
             return
 
-        self._ready.clear()
-        await self._ready.wait()
-        if not self._connection.is_connected:
-            raise RuntimeError("MT5 not connected")
+        self.mark_unready()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _WAIT_READY_TIMEOUT_SEC
+        last_error: Exception | None = None
+
+        while not self._connection.is_connected:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                msg = f"MT5 not connected within {_WAIT_READY_TIMEOUT_SEC:.0f}s"
+                if last_error is not None:
+                    raise RuntimeError(f"{msg}: {last_error}") from last_error
+                raise RuntimeError(msg)
+
+            try:
+                await asyncio.wait_for(self.reconnect_all(), timeout=remaining)
+            except TimeoutError as exc:
+                raise RuntimeError(
+                    f"MT5 reconnect timed out within {_WAIT_READY_TIMEOUT_SEC:.0f}s",
+                ) from exc
+            except Exception as exc:
+                last_error = exc
+                logger.warning("MT5 reconnect attempt failed: %s", exc)
+                delay = min(_RECONNECT_RETRY_DELAY_SEC, remaining)
+                await asyncio.sleep(delay)
+                continue
+
+            if self._connection.is_connected:
+                return
 
     async def reconnect_all(self) -> None:
-        self._ready.clear()
-        await asyncio.to_thread(self._connection.reconnect)
-        for symbol in self._settings.parsed_allowed_symbols:
-            from trading.mt5.symbol_helper import ensure_symbol
-            await asyncio.to_thread(ensure_symbol, symbol)
-        self._ready.set()
+        async with self._reconnect_lock:
+            self._ready.clear()
+            await asyncio.to_thread(self._connection.reconnect)
+            for symbol in self._settings.parsed_allowed_symbols:
+                from trading.mt5.symbol_helper import ensure_symbol
+                await asyncio.to_thread(ensure_symbol, symbol)
+            self._ready.set()
+            logger.info("MT5 service reconnected")
 
-    async def run_trading(self, operation):
+    async def run_trading(
+        self,
+        operation: Callable[[MT5TradingAdapter], Awaitable[T]],
+    ) -> T:
+        await self.ensure_ready()
+        async with self._operation_lock:
+            try:
+                return await operation(self._adapter)
+            except Exception as exc:
+                if not is_retryable_trade_error(exc):
+                    raise
+                logger.warning("MT5 operation failed, reconnecting: %s", exc)
+
+        self.mark_unready()
         await self.ensure_ready()
         async with self._operation_lock:
             return await operation(self._adapter)
