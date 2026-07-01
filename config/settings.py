@@ -26,8 +26,28 @@ class Settings(BaseSettings):
         default="gemini-2.0-flash,gemini-2.5-flash-lite",
     )
 
+    metaapi_token: str | None = Field(default=None, description="MetaAPI cloud token")
+    metaapi_account_id: str | None = Field(
+        default=None,
+        description="MetaAPI MT account UUID",
+    )
+
     mt5_path: str | None = Field(default=None, description="MT5 terminal64.exe path")
-    mt5_login: int
+    mt5_login: int | None = Field(default=None, description="MT5 account login")
+
+    @field_validator("mt5_login", mode="before")
+    @classmethod
+    def empty_login_to_none(cls, value: object) -> object:
+        if value == "" or value is None:
+            return None
+        return value
+
+    @field_validator("metaapi_token", "metaapi_account_id", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
     @field_validator("mt5_path", mode="before")
     @classmethod
@@ -42,7 +62,7 @@ class Settings(BaseSettings):
         path = path.replace(f"{tab}erminal64", "\\terminal64")
         path = path.replace(f"{tab}erminal64.exe", "\\terminal64.exe")
         return path.replace("/", "\\")
-    mt5_password: str
+    mt5_password: str | None = Field(default=None, description="MT5 account password")
     mt5_server: str | None = Field(default=None, description="Broker server name")
     mt5_timeout: int = Field(default=60000, ge=1000, description="Initialize timeout ms")
 

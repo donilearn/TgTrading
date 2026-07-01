@@ -5,6 +5,7 @@ import logging
 from ai.analyzer import SignalAnalyzer
 from ai.gemini_client import GeminiClient
 from ai.tp_order_count import message_tp_level_count, reference_price_from_market
+from config.backend_validation import backend_label
 from config.settings import Settings
 from models.chat_message import ChatMessage
 from telegram.client import TelegramService
@@ -12,8 +13,7 @@ from telegram.listener import MessageListener
 from telegram.message_buffer import MessageBuffer
 from trading.auto_breakeven_service import AutoBreakevenService
 from trading.ai_order_executor import AiOrderExecutor
-from trading.client import MT5Service
-from trading.mt5.connection_keeper import MT5ConnectionKeeper
+from trading.client import create_connection_keeper, create_trading_service
 from trading.existing_orders_service import ExistingOrdersService
 from trading.order_limit_tracker import OrderLimitTracker
 from trading.trading_context_loader import TradingContextLoader
@@ -26,8 +26,9 @@ _INFLIGHT_DRAIN_TIMEOUT = 15.0
 
 
 class TradingPipeline:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, win_mode: bool = False) -> None:
         self._settings = settings
+        self._win_mode = win_mode
         self._stopped = False
         self._shutting_down = False
         self._inflight_messages = 0
@@ -35,8 +36,8 @@ class TradingPipeline:
         self._telegram = TelegramService(settings)
         self._gemini = GeminiClient(settings)
         self._analyzer = SignalAnalyzer(self._gemini, settings)
-        self._mt5 = MT5Service(settings)
-        self._mt5_keeper = MT5ConnectionKeeper(self._mt5)
+        self._trading = create_trading_service(settings, win_mode=win_mode)
+        self._keeper = create_connection_keeper(self._trading, win_mode=win_mode)
         self._limit_tracker = OrderLimitTracker(
             max_per_channel=settings.max_order_count,
             max_per_message=settings.effective_max_per_message,
@@ -45,9 +46,10 @@ class TradingPipeline:
         self._auto_breakeven = AutoBreakevenService(settings)
         self._existing_orders = ExistingOrdersService()
         self._context_loader = TradingContextLoader(
-            self._mt5,
+            self._trading,
             self._existing_orders,
             settings,
+            win_mode=win_mode,
         )
         self._message_buffer = MessageBuffer(
             max_size=settings.context_message_count,
@@ -104,7 +106,7 @@ class TradingPipeline:
             )
 
             if await self._auto_breakeven.apply_on_message(
-                self._mt5, existing, market,
+                self._trading, existing, market,
             ):
                 existing, market, _global_count = await self._context_loader.load(
                     magic,
@@ -173,10 +175,9 @@ class TradingPipeline:
                     logger.info("Trade capped: %s", limit_msg)
             else:
                 to_place = None
-                limit_msg = ""
 
             results = await self._executor.execute(
-                self._mt5,
+                self._trading,
                 response,
                 magic,
                 existing,
@@ -185,13 +186,11 @@ class TradingPipeline:
                 message_time=message.date,
             )
 
-            success_count = 0
             entries_placed = 0
             for result in results:
                 if result.skipped:
                     logger.info("Trade skipped: %s", result.message)
                 elif result.success:
-                    success_count += 1
                     if result.action not in ("close", "cancel", "modify"):
                         entries_placed += 1
                     logger.info(
@@ -219,15 +218,20 @@ class TradingPipeline:
 
     async def start(self) -> None:
         await self._telegram.start()
-        await self._mt5.connect()
-        self._mt5_keeper.start()
+        await self._trading.connect()
+        if not self._win_mode:
+            await self._trading.subscribe_market_data(
+                self._settings.parsed_allowed_symbols,
+            )
+        self._keeper.start()
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"
         mode_label = "AGGRESSIVE" if self._settings.aggressive_mode else "NORMAL"
         logger.info(
-            "Pipeline started in %s mode (%s) — groups: %s, "
+            "Pipeline started backend=%s trade=%s (%s) — groups: %s, "
             "msg max %d, channel max %d",
+            backend_label(self._win_mode),
             mode,
             mode_label,
             self._settings.parsed_group_ids,
@@ -287,9 +291,9 @@ class TradingPipeline:
         self._shutting_down = True
 
         await self._wait_for_inflight_handlers()
-        await self._mt5_keeper.stop()
+        await self._keeper.stop()
         await self._telegram.stop()
-        await self._mt5.disconnect()
+        await self._trading.disconnect()
         logger.info("Pipeline stopped")
 
     async def _wait_for_inflight_handlers(self) -> None:
