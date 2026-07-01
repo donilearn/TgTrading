@@ -11,7 +11,7 @@ def patch_existing_positions_sltp(
     response: AiTradeResponse,
     existing: list[ExistingOrder],
 ) -> AiTradeResponse:
-    """Signalda SL/TP berilsa mavjud ochiq pozitsiyalarga modify qo'shadi (pending emas)."""
+    """Mavjud pozitsiyada SL/TP yo'q bo'lsa, signaldagi qiymat bilan modify qo'shadi."""
     if not response.is_signal or not response.symbol:
         return response
 
@@ -32,8 +32,9 @@ def patch_existing_positions_sltp(
         if _has_modify_for(response.orders, item.order_number):
             continue
 
-        new_sl = sl
-        new_tp = tp
+        # Policy: faqat yo'q SL/TP ni signal bilan to'ldir; mavjud himoyani overwrite qilma
+        new_sl = sl if item.stop_loss is None else None
+        new_tp = tp if item.take_profit is None else None
         if new_sl is None and new_tp is None:
             continue
 
