@@ -9,10 +9,12 @@ from telegram.chat_message_dispatcher import ChatMessageDispatcher
 from telegram.client import TelegramService
 from telegram.media_extractor import build_chat_message, build_sender_info
 from telegram.message_buffer import MessageBuffer
+from telegram.message_dedup import MessageDedupTracker
+from telegram.message_fingerprint import message_fingerprint
 
 logger = logging.getLogger(__name__)
 
-MessageHandler = Callable[..., Awaitable[None]]
+MessageHandler = Callable[..., Awaitable[bool]]
 
 
 class MessageListener:
@@ -29,6 +31,7 @@ class MessageListener:
         self._on_message = on_message
         self._chat_titles: dict[int, str] = {}
         self._dispatcher = ChatMessageDispatcher()
+        self._dedup = MessageDedupTracker()
 
     async def _resolve_chat_title(self, chat_id: int) -> str:
         if chat_id in self._chat_titles:
@@ -83,7 +86,19 @@ class MessageListener:
             )
 
         async def _handle() -> None:
-            if is_edit:
+            fingerprint = message_fingerprint(message)
+            if self._dedup.already_processed(chat_id, message.message_id, fingerprint):
+                logger.info(
+                    "Skip duplicate chat=%s msg=%s — same version already analyzed",
+                    chat_id,
+                    message.message_id,
+                )
+                self._buffer.upsert(message)
+                return
+
+            in_buffer = self._buffer.contains(chat_id, message.message_id)
+            effective_edit = is_edit or in_buffer
+            if effective_edit:
                 context = self._buffer.get_context_excluding(
                     chat_id,
                     message.message_id,
@@ -91,12 +106,15 @@ class MessageListener:
             else:
                 context = self._buffer.get_context(chat_id)
 
-            await self._on_message(message, context, is_edit=is_edit)
+            analyzed = await self._on_message(
+                message,
+                context,
+                is_edit=effective_edit,
+            )
+            self._buffer.upsert(message)
 
-            if is_edit:
-                self._buffer.upsert(message)
-            else:
-                self._buffer.add(message)
+            if analyzed:
+                self._dedup.mark_processed(chat_id, message.message_id, fingerprint)
 
         await self._dispatcher.run_serial(
             chat_id,

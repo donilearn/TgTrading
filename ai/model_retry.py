@@ -3,6 +3,8 @@ import time
 
 from google.genai import errors
 
+from ai.network_retry import is_retryable_network_error
+
 logger = logging.getLogger(__name__)
 
 RETRYABLE_CODES = {429, 500, 503, 504}
@@ -43,26 +45,43 @@ def generate_with_fallback(
                 if exc.code not in RETRYABLE_CODES:
                     raise
 
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(
-                        "Gemini %s returned %s, retry %d/%d in %.1fs",
-                        model,
-                        exc.code,
-                        attempt + 1,
-                        max_retries,
-                        delay,
-                    )
-                    time.sleep(delay)
-                    continue
+            except Exception as exc:
+                last_error = exc
+                if not is_retryable_network_error(exc):
+                    raise
+                logger.warning(
+                    "Gemini %s network error: %s",
+                    model,
+                    exc,
+                )
 
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Gemini %s retry %d/%d in %.1fs (%s)",
+                    model,
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                    last_error,
+                )
+                time.sleep(delay)
+                continue
+
+            if isinstance(last_error, errors.APIError):
                 logger.warning(
                     "Gemini %s unavailable after %d retries (%s), trying next model",
                     model,
                     max_retries,
-                    exc.code,
+                    last_error.code,
                 )
-                break
+            else:
+                logger.warning(
+                    "Gemini %s network failed after %d retries, trying next model",
+                    model,
+                    max_retries,
+                )
+            break
 
     if last_error:
         raise last_error

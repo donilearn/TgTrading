@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 _SUCCESS_RETCODES = frozenset({
     mt5.TRADE_RETCODE_DONE,
     mt5.TRADE_RETCODE_PLACED,
+    mt5.TRADE_RETCODE_NO_CHANGES,
 })
 _CHECK_OK = frozenset({0, mt5.TRADE_RETCODE_DONE})
 

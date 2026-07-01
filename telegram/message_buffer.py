@@ -20,6 +20,12 @@ class MessageBuffer:
             if msg.message_id != message_id
         ]
 
+    def contains(self, chat_id: int, message_id: int) -> bool:
+        buffer = self._buffers.get(chat_id)
+        if not buffer:
+            return False
+        return any(item.message_id == message_id for item in buffer)
+
     def add(self, message: ChatMessage) -> None:
         if message.chat_id not in self._buffers:
             self._buffers[message.chat_id] = deque(maxlen=self._max_size)

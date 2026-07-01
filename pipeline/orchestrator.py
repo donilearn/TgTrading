@@ -64,14 +64,14 @@ class TradingPipeline:
         context: list[ChatMessage],
         *,
         is_edit: bool = False,
-    ) -> None:
+    ) -> bool:
         if self._shutting_down or self._stopped:
             logger.info("Ignoring message during shutdown from %s", message.chat_id)
-            return
+            return False
 
         self._inflight_messages += 1
         try:
-            await self._process_message(message, context, is_edit=is_edit)
+            return await self._process_message(message, context, is_edit=is_edit)
         finally:
             self._inflight_messages -= 1
 
@@ -81,7 +81,7 @@ class TradingPipeline:
         context: list[ChatMessage],
         *,
         is_edit: bool = False,
-    ) -> None:
+    ) -> bool:
         try:
             magic = self._settings.get_group_magic(message.chat_id)
             edit_tag = " (edited)" if is_edit else ""
@@ -112,6 +112,9 @@ class TradingPipeline:
                 is_edit=is_edit,
             )
 
+            if (response.reasoning or "").startswith("Analysis error:"):
+                return False
+
             for item in response.orders:
                 logger.info(
                     "Analysis [%s]: countOrder=%s type=%s price=%s sl=%s tp=%s orderType=%s vol=%s",
@@ -136,7 +139,7 @@ class TradingPipeline:
             )
 
             if not response.is_actionable:
-                return
+                return True
 
             planned_entries = self._executor.count_entry_orders(response)
             existing_group_count = len(existing)
@@ -153,7 +156,7 @@ class TradingPipeline:
                 )
                 if not allowed:
                     logger.info("Trade skipped: %s", limit_msg)
-                    return
+                    return True
                 if limit_msg:
                     logger.info("Trade capped: %s", limit_msg)
             else:
@@ -192,12 +195,15 @@ class TradingPipeline:
             if entries_placed:
                 self._limit_tracker.record(message.chat_id, entries_placed)
 
+            return True
+
         except Exception:
             logger.exception(
                 "Failed to handle message from %s in %s",
                 message.sender,
                 message.chat_id,
             )
+            return False
 
     async def start(self) -> None:
         await self._telegram.start()

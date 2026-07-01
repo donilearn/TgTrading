@@ -89,6 +89,7 @@ TAHRIRLANGAN XABAR (TAHRIRLANGAN JORIY XABAR / tahrirlangan=):
 - Tahrir faqat SL/TP qo'shsa yoki o'zgartirsa → type=modify (orderNumber bo'yicha) yoki patch qilinadigan SL/TP
 - Tahrir signalni bekor qilsa ("cancel", "invalid") → type=cancel yoki type=close kerakli orderlar uchun
 - Tahrir yangi TP qo'shsa va hali ochilmagan entry kerak bo'lsa — faqat yetishmayotgan orderlar uchun entry
+- Mavjud orderlar signalga allaqachon mos va o'zgartirish kerak emas → orders=[] (bo'sh), yangi entry QO'YMA
 - Reasoning da tahrir ekanini va mavjud orderlar bilan sync qanday qilinganini qisqa yoz
 
 === SIGNAL EMAS (is_signal=false) ===

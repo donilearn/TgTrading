@@ -34,6 +34,10 @@ def expand_zone_grid_orders(
         item for item in response.orders if item.action_type.lower() != "entry"
     ]
 
+    # AI faqat modify/cancel/close yoki bo'sh orders[] qaytarsa — grid qo'shma
+    if not entries:
+        return response
+
     market_entries = [
         item for item in entries if item.order_type.lower() == "market"
     ]
