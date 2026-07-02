@@ -3,10 +3,12 @@ import contextlib
 import logging
 
 from ai.analyzer import SignalAnalyzer
+from ai.management_message_detector import message_needs_broker_context
 from ai.gemini_client import GeminiClient
 from ai.tp_order_count import message_tp_level_count, reference_price_from_market
 from config.backend_validation import backend_label
 from config.settings import Settings
+from models.ai_trade_response import AiTradeResponse
 from models.chat_message import ChatMessage
 from telegram.client import TelegramService
 from telegram.listener import MessageListener
@@ -164,6 +166,11 @@ class TradingPipeline:
                 bool(message.media),
             )
 
+            if message_needs_broker_context(message.text):
+                return await self._process_message_metaapi_with_context(
+                    message, context, magic, is_edit=is_edit,
+                )
+
             response = await self._analyzer.analyze_message(message, context, is_edit=is_edit)
 
             if (response.reasoning or "").startswith("Analysis error:"):
@@ -176,14 +183,7 @@ class TradingPipeline:
                 return True
 
             try:
-                await self._trading.ensure_session(
-                    self._settings.parsed_allowed_symbols,
-                )
-                existing, market, _global_count = await self._context_loader.load(
-                    magic,
-                    message.chat_id,
-                    self._settings.group_magic_list,
-                )
+                existing, market = await self._load_metaapi_context(magic, message.chat_id)
             except Exception as exc:
                 logger.error(
                     "MetaAPI session failed for chat=%s — trade skipped: %s",
@@ -191,15 +191,6 @@ class TradingPipeline:
                     exc,
                 )
                 return False
-
-            if await self._auto_breakeven.apply_on_message(
-                self._trading, existing, market,
-            ):
-                existing, market, _global_count = await self._context_loader.load(
-                    magic,
-                    message.chat_id,
-                    self._settings.group_magic_list,
-                )
 
             logger.info(
                 "Context loaded chat=%s orders=%d market_symbols=%d",
@@ -212,12 +203,14 @@ class TradingPipeline:
                 response, existing, market, message.text,
             )
 
-            executed = await self._execute_if_actionable(
-                message, response, magic, existing, market,
+            return await self._execute_if_actionable(
+                message,
+                response,
+                magic,
+                existing,
+                market,
+                metaapi_session=True,
             )
-            if not response.is_actionable:
-                self._trading.touch_session()
-            return executed
 
         except Exception:
             logger.exception(
@@ -226,6 +219,72 @@ class TradingPipeline:
                 message.chat_id,
             )
             return False
+
+    async def _process_message_metaapi_with_context(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+        magic: int,
+        *,
+        is_edit: bool = False,
+    ) -> bool:
+        """Profit/BE/partial-close xabarlari — broker snapshot bilan to'liq tahlil."""
+        try:
+            existing, market = await self._load_metaapi_context(magic, message.chat_id)
+        except Exception as exc:
+            logger.error(
+                "MetaAPI session failed for management msg chat=%s: %s",
+                message.chat_id,
+                exc,
+            )
+            return False
+
+        logger.info(
+            "Management message chat=%s orders=%d market_symbols=%d",
+            message.chat_id,
+            len(existing),
+            len(market),
+        )
+
+        response = await self._analyzer.analyze(
+            message, context, existing, market,
+            is_edit=is_edit,
+        )
+
+        if (response.reasoning or "").startswith("Analysis error:"):
+            return False
+
+        return await self._execute_if_actionable(
+            message,
+            response,
+            magic,
+            existing,
+            market,
+            metaapi_session=True,
+        )
+
+    async def _load_metaapi_context(
+        self,
+        magic: int,
+        chat_id: int,
+    ) -> tuple[list, list]:
+        await self._trading.ensure_session(
+            self._settings.parsed_allowed_symbols,
+        )
+        existing, market, _global_count = await self._context_loader.load(
+            magic,
+            chat_id,
+            self._settings.group_magic_list,
+        )
+        if await self._auto_breakeven.apply_on_message(
+            self._trading, existing, market,
+        ):
+            existing, market, _global_count = await self._context_loader.load(
+                magic,
+                chat_id,
+                self._settings.group_magic_list,
+            )
+        return existing, market
 
     async def _maybe_auto_breakeven_on_active_session(
         self,
@@ -250,14 +309,18 @@ class TradingPipeline:
     async def _execute_if_actionable(
         self,
         message: ChatMessage,
-        response,
+        response: AiTradeResponse,
         magic: int,
         existing,
         market,
+        *,
+        metaapi_session: bool = False,
     ) -> bool:
         self._log_analysis(message.chat_id, response)
 
         if not response.is_actionable:
+            if metaapi_session and not self._win_mode:
+                self._trading.touch_session()
             return True
 
         planned_entries = self._executor.count_entry_orders(response)

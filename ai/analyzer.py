@@ -11,6 +11,7 @@ from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
 from ai.default_sltp_patcher import apply_default_sltp_to_entries
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
+from ai.partial_close_patcher import apply_partial_close_from_message
 from ai.redundant_market_guard import remove_redundant_market_entries
 from ai.request_logger import log_ai_error, log_ai_request, log_ai_response
 from ai.tp_entry_expander import expand_tp_entry_orders
@@ -191,6 +192,12 @@ class SignalAnalyzer:
             message_text,
             self._settings,
             market=market,
+        )
+        result = apply_partial_close_from_message(
+            result,
+            existing_orders,
+            message_text,
+            self._settings,
         )
         return result
 

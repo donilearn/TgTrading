@@ -70,8 +70,9 @@ def sync_type1_zone_entries(
                 order_type="market",
             )
         )
-        entry_tps = tp_levels[1:]
-        entry_prices = prices[1:]
+        # Market allaqachon ochilgan — zonadagi BARCHA limitlar (4075 va 4080) ochiladi
+        entry_tps = tp_levels
+        entry_prices = prices
     else:
         entry_tps = tp_levels
         entry_prices = prices
@@ -84,6 +85,8 @@ def sync_type1_zone_entries(
             settings.max_volume,
         )
         for index, (price, tp) in enumerate(zip(entry_prices, entry_tps)):
+            if _has_pending_near(existing, symbol, side, price):
+                continue
             orders.append(
                 AiOrderAction(
                     count_order=1,
@@ -97,6 +100,7 @@ def sync_type1_zone_entries(
                 )
             )
 
+    limit_count = sum(1 for o in orders if o.action_type.lower() == "entry")
     logger.info(
         "TYPE1 zone sync: %s %s zone=%s-%s TP=%d → modify=%d limit=%d",
         symbol,
@@ -105,7 +109,7 @@ def sync_type1_zone_entries(
         zone_high,
         len(tp_levels),
         1 if positions else 0,
-        len(entry_tps),
+        limit_count,
     )
 
     return response.model_copy(
@@ -156,3 +160,22 @@ def _modify_target(
             return item.count_order
 
     return int(positions[0].order_number)
+
+
+def _has_pending_near(
+    existing: list[ExistingOrder],
+    symbol: str,
+    side: str,
+    price: float,
+    tolerance: float = 0.5,
+) -> bool:
+    for item in existing:
+        if item.is_position:
+            continue
+        if item.symbol != symbol:
+            continue
+        if item.side.lower() != side.lower():
+            continue
+        if abs(item.open_price - price) <= tolerance:
+            return True
+    return False
