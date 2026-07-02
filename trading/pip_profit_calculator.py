@@ -1,6 +1,6 @@
 from models.existing_order import ExistingOrder
 from models.symbol_market_info import SymbolMarketInfo
-from trading.sltp_price_resolver import pip_size_from_spec
+from trading.pip_size import pip_size_from_spec
 
 
 def position_profit_pips(

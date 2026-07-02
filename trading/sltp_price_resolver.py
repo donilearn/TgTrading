@@ -1,17 +1,7 @@
 from typing import Any
 
+from trading.pip_size import pip_size_from_spec
 from trading.price_normalizer import normalize_price
-
-
-def pip_size_from_spec(spec: dict) -> float | None:
-    tick = _float(spec.get("tickSize"))
-    if not tick or tick <= 0:
-        return None
-
-    digits = _int(spec.get("digits"))
-    if digits in (3, 5):
-        return tick * 10
-    return tick
 
 
 def resolve_default_sltp_prices(

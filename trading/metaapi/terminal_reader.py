@@ -34,6 +34,7 @@ class MetaApiTerminalReader:
                 ask=_float(quote_dict.get("ask")),
                 digits=_int(spec_dict.get("digits")),
                 tick_size=_float(spec_dict.get("tickSize")),
+                pip_size=_float(spec_dict.get("pipSize")),
                 volume_step=_float(spec_dict.get("volumeStep")),
                 min_volume=_float(spec_dict.get("minVolume")),
             ))

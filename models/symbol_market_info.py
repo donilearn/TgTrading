@@ -7,5 +7,6 @@ class SymbolMarketInfo(BaseModel):
     ask: float | None = None
     digits: int | None = None
     tick_size: float | None = None
+    pip_size: float | None = None
     volume_step: float | None = None
     min_volume: float | None = None

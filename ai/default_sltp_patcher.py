@@ -95,4 +95,5 @@ def _market_as_spec(market_info: SymbolMarketInfo | None) -> dict | None:
     return {
         "tickSize": market_info.tick_size,
         "digits": market_info.digits,
+        "pipSize": market_info.pip_size,
     }

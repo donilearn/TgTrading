@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from config.group_magic import group_magic_map, magic_from_group_id
@@ -86,13 +86,21 @@ class Settings(BaseSettings):
     default_sl_pips: float = Field(
         default=5000,
         ge=0,
-        alias="DEFAULT_SL_PIPS",
+        validation_alias=AliasChoices(
+            "default_SL",
+            "DEFAULT_SL",
+            "DEFAULT_SL_PIPS",
+        ),
         description="Signalda SL yo'q bo'lsa entry dan pip masofasi (0=o'chirilgan)",
     )
     default_tp_pips: float = Field(
         default=10000,
         ge=0,
-        alias="DEFAULT_TP_PIPS",
+        validation_alias=AliasChoices(
+            "default_TP",
+            "DEFAULT_TP",
+            "DEFAULT_TP_PIPS",
+        ),
         description="Signalda TP yo'q bo'lsa entry dan pip masofasi (0=o'chirilgan)",
     )
     auto_be_pips: float = Field(
