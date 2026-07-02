@@ -317,7 +317,12 @@ class TradingPipeline:
         return True
 
     @staticmethod
-    def _log_analysis(chat_id: int, response, *, prefix: str = "Analysis") -> None:
+    def _log_analysis(
+        chat_id: int,
+        response: AiTradeResponse,
+        *,
+        prefix: str = "Analysis",
+    ) -> None:
         for item in response.orders:
             logger.info(
                 "%s [%s]: countOrder=%s type=%s price=%s sl=%s tp=%s orderType=%s vol=%s",
@@ -331,30 +336,17 @@ class TradingPipeline:
                 item.order_type,
                 item.volume,
             )
-        actionable = getattr(response, "is_actionable", None)
-        if actionable is None:
-            logger.info(
-                "%s [%s]: signal=%s symbol=%s side=%s orders=%d — %s",
-                prefix,
-                chat_id,
-                response.is_signal,
-                response.symbol,
-                response.side,
-                len(response.orders),
-                response.reasoning,
-            )
-        else:
-            logger.info(
-                "%s [%s]: signal=%s symbol=%s side=%s orders=%d actionable=%s — %s",
-                prefix,
-                chat_id,
-                response.is_signal,
-                response.symbol,
-                response.side,
-                len(response.orders),
-                actionable,
-                response.reasoning,
-            )
+        logger.info(
+            "%s [%s]: signal=%s symbol=%s side=%s orders=%d actionable=%s — %s",
+            prefix,
+            chat_id,
+            response.is_signal,
+            response.symbol,
+            response.side,
+            len(response.orders),
+            response.is_actionable,
+            response.reasoning,
+        )
 
     async def start(self) -> None:
         await self._telegram.start()
