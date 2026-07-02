@@ -109,6 +109,17 @@ class Settings(BaseSettings):
         alias="AUTO_BE_PIPS",
         description="Har xabar kelganda profit shu pip dan oshsa SL=openPrice (0=o'chirilgan)",
     )
+    metaapi_idle_disconnect_sec: int = Field(
+        default=600,
+        ge=0,
+        alias="METAAPI_IDLE_DISCONNECT",
+        description="Signal/trade dan keyin MetaAPI ni uzish (sek, 0=uzilmasin)",
+    )
+    metaapi_keeper_enabled: bool = Field(
+        default=False,
+        alias="METAAPI_KEEPER_ENABLED",
+        description="Fon health-check va avto-reconnect (odatda o'chiq)",
+    )
     log_dir: str = Field(default="logs", alias="LOG_DIR")
     log_retention_days: int = Field(
         default=30,

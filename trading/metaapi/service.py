@@ -12,12 +12,11 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-_RECONNECT_SETTLE_SEC = 3.0
-_STREAMING_RPC_GAP_SEC = 5.0
+_RECONNECT_SETTLE_SEC = 2.0
+_STREAMING_RPC_GAP_SEC = 3.0
 _CONNECT_RETRY_DELAY_SEC = 5.0
-_MAX_CONNECT_ATTEMPTS = 6
-_SYNC_TIMEOUT_SEC = 120.0
-_WAIT_READY_TIMEOUT_SEC = 45.0
+_MAX_CONNECT_ATTEMPTS = 3
+_SYNC_TIMEOUT_SEC = 60.0
 
 
 def _is_rate_limited(exc: Exception) -> bool:
@@ -43,13 +42,14 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 class MetaApiService:
-    """Streaming (context) + lazy RPC (savdo) — bitta reconnect, atomic swap."""
+    """On-demand streaming + lazy RPC. Ulanish faqat signal/trade vaqtida."""
 
     def __init__(self, settings: Settings) -> None:
         if not settings.metaapi_token or not settings.metaapi_account_id:
             raise ValueError("METAAPI_TOKEN and METAAPI_ACCOUNT_ID are required")
         self._api = MetaApi(token=settings.metaapi_token)
         self._account_id = settings.metaapi_account_id
+        self._idle_disconnect_sec = float(settings.metaapi_idle_disconnect_sec)
         self._account = None
         self._streaming_connection = None
         self._rpc_connection = None
@@ -62,11 +62,16 @@ class MetaApiService:
         self._market_symbols: list[str] = []
         self._last_connect_at = 0.0
         self._reconnect_task: asyncio.Task | None = None
+        self._idle_disconnect_task: asyncio.Task | None = None
         self.api = self._api
 
     @property
     def last_connect_at(self) -> float:
         return self._last_connect_at
+
+    @property
+    def is_connected(self) -> bool:
+        return self._streaming_ready.is_set()
 
     @property
     def reconnect_pending(self) -> bool:
@@ -96,23 +101,41 @@ class MetaApiService:
         if self._keeper is not None:
             self._keeper.schedule_reconnect()
 
-    async def connect(self) -> None:
-        """Startup: faqat streaming — RPC savdo vaqtida lazy ulanadi."""
+    async def ensure_session(self, symbols: list[str] | None = None) -> None:
+        """Signal/trade oldidan streaming ulanish — kerak bo'lganda ochiladi."""
+        self._cancel_idle_disconnect()
+        if symbols:
+            self._market_symbols = list(symbols)
+
+        if self._streaming_ready.is_set():
+            self._schedule_idle_disconnect()
+            return
+
         async with self._lifecycle_lock:
             if self._streaming_ready.is_set():
+                self._schedule_idle_disconnect()
                 return
             streaming = await self._open_streaming_connection()
             self._streaming_connection = streaming
             self._streaming_ready.set()
             self._last_connect_at = asyncio.get_running_loop().time()
-            logger.info("MetaAPI streaming ready for account %s", self._account_id)
+            await self._resubscribe_market_data_unlocked()
+            logger.info("MetaAPI session ready for account %s", self._account_id)
+
+        self._schedule_idle_disconnect()
+
+    def touch_session(self) -> None:
+        if self._streaming_ready.is_set():
+            self._schedule_idle_disconnect()
+
+    async def connect(self) -> None:
+        await self.ensure_session(self._market_symbols)
 
     async def ensure_streaming_ready(self) -> None:
-        await self._wait_until_ready(
-            self._streaming_ready,
-            "streaming",
-            timeout=_WAIT_READY_TIMEOUT_SEC,
-        )
+        if not self._streaming_ready.is_set():
+            raise RuntimeError(
+                "MetaAPI streaming is not connected — call ensure_session() first",
+            )
 
     async def ensure_rpc_ready(self) -> None:
         await self.ensure_streaming_ready()
@@ -182,10 +205,15 @@ class MetaApiService:
         return True
 
     async def reconnect_all(self) -> None:
+        if not self._streaming_ready.is_set() and self._streaming_connection is None:
+            self._reconnect_requested.clear()
+            return
+
         if self._reconnect_task is not None and not self._reconnect_task.done():
             await self._reconnect_task
             return
 
+        self._cancel_idle_disconnect()
         self._reconnect_task = asyncio.create_task(
             self._reconnect_all_inner(),
             name="metaapi-reconnect-all",
@@ -195,8 +223,10 @@ class MetaApiService:
         finally:
             if self._reconnect_task is not None and self._reconnect_task.done():
                 self._reconnect_task = None
+        self._schedule_idle_disconnect()
 
     async def disconnect(self) -> None:
+        self._cancel_idle_disconnect()
         async with self._lifecycle_lock:
             async with self._rpc_lock:
                 await self._invalidate_rpc_unlocked()
@@ -210,7 +240,8 @@ class MetaApiService:
 
     async def subscribe_market_data(self, symbols: list[str]) -> None:
         self._market_symbols = list(symbols)
-        await self._resubscribe_market_data()
+        if self._streaming_ready.is_set():
+            await self._resubscribe_market_data()
 
     async def _reconnect_all_inner(self) -> None:
         self._reconnect_requested.clear()
@@ -218,7 +249,7 @@ class MetaApiService:
         for attempt in range(1, _MAX_CONNECT_ATTEMPTS + 1):
             try:
                 async with self._lifecycle_lock:
-                    if attempt > 2:
+                    if attempt >= _MAX_CONNECT_ATTEMPTS:
                         await self._reset_websocket_client()
                     await self._invalidate_rpc_unlocked()
                     new_streaming = await self._open_streaming_connection()
@@ -239,57 +270,11 @@ class MetaApiService:
                     exc,
                     delay,
                 )
+                if attempt >= _MAX_CONNECT_ATTEMPTS:
+                    break
                 await asyncio.sleep(delay)
 
         logger.error("MetaAPI reconnect exhausted after %d attempts", _MAX_CONNECT_ATTEMPTS)
-
-    async def _wait_until_ready(
-        self,
-        event: asyncio.Event,
-        label: str,
-        timeout: float = _WAIT_READY_TIMEOUT_SEC,
-    ) -> None:
-        if event.is_set():
-            return
-
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-
-        while not event.is_set():
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                logger.warning(
-                    "MetaAPI %s not ready in %.0fs — forcing reconnect",
-                    label,
-                    timeout,
-                )
-                await self.reconnect_all()
-                if event.is_set():
-                    return
-                raise TimeoutError(
-                    f"MetaAPI {label} connection not ready within {timeout:.0f}s",
-                )
-
-            if self.reconnect_in_progress and self._reconnect_task is not None:
-                try:
-                    await asyncio.wait_for(
-                        asyncio.shield(self._reconnect_task),
-                        timeout=remaining,
-                    )
-                except TimeoutError:
-                    continue
-                if event.is_set():
-                    return
-                continue
-
-            if self._reconnect_requested.is_set() and self._keeper is not None:
-                await self._keeper.reconnect_and_wait()
-                continue
-
-            try:
-                await asyncio.wait_for(event.wait(), timeout=min(remaining, 5.0))
-            except TimeoutError:
-                continue
 
     async def _get_account(self) -> Any:
         account = self._account
@@ -372,3 +357,31 @@ class MetaApiService:
             pass
 
         await asyncio.sleep(1.0)
+
+    def _schedule_idle_disconnect(self) -> None:
+        if self._idle_disconnect_sec <= 0:
+            return
+        self._cancel_idle_disconnect()
+        self._idle_disconnect_task = asyncio.create_task(
+            self._idle_disconnect_after(self._idle_disconnect_sec),
+            name="metaapi-idle-disconnect",
+        )
+
+    def _cancel_idle_disconnect(self) -> None:
+        task = self._idle_disconnect_task
+        self._idle_disconnect_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _idle_disconnect_after(self, delay: float) -> None:
+        try:
+            await asyncio.sleep(delay)
+            if not self._streaming_ready.is_set():
+                return
+            logger.info(
+                "MetaAPI idle %.0fs — disconnecting until next signal",
+                delay,
+            )
+            await self.disconnect()
+        except asyncio.CancelledError:
+            pass

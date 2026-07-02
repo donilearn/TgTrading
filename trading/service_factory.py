@@ -12,7 +12,12 @@ def create_trading_service(settings: Settings, *, win_mode: bool) -> Any:
     return MetaApiService(settings)
 
 
-def create_connection_keeper(trading: Any, *, win_mode: bool) -> Any:
+def create_connection_keeper(
+    trading: Any,
+    *,
+    win_mode: bool,
+    settings: Settings | None = None,
+) -> Any:
     if win_mode:
         from trading.mt5.connection_keeper import MT5ConnectionKeeper
         return MT5ConnectionKeeper(trading)

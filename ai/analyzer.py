@@ -57,6 +57,20 @@ class SignalAnalyzer:
         *,
         is_edit: bool = False,
     ) -> AiTradeResponse:
+        """Gemini tahlil + broker konteksti bilan post-process (win/MT5 rejimi)."""
+        result = await self.analyze_message(message, context, is_edit=is_edit)
+        return self.enrich_with_broker_context(
+            result, existing_orders, market, message.text,
+        )
+
+    async def analyze_message(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+        *,
+        is_edit: bool = False,
+    ) -> AiTradeResponse:
+        """Faqat Gemini — MetaAPI ulanishsiz."""
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
 
@@ -73,9 +87,22 @@ class SignalAnalyzer:
                 )
 
         return await self._analyze_with_gemini(
-            analysis_message, context, existing_orders, market,
+            analysis_message, context, [], [],
             is_edit=is_edit,
+            post_process=False,
         )
+
+    def enrich_with_broker_context(
+        self,
+        result: AiTradeResponse,
+        existing_orders: list[ExistingOrder],
+        market: list[SymbolMarketInfo],
+        message_text: str | None,
+    ) -> AiTradeResponse:
+        """Broker snapshot bilan post-process (MetaAPI ulanishdan keyin)."""
+        if not result.is_signal:
+            return result
+        return self._post_process(result, existing_orders, market, message_text)
 
     async def _analyze_with_gemini(
         self,
@@ -85,6 +112,7 @@ class SignalAnalyzer:
         market: list[SymbolMarketInfo],
         *,
         is_edit: bool = False,
+        post_process: bool = True,
     ) -> AiTradeResponse:
         config = types.GenerateContentConfig(
             system_instruction=self._system_prompt,
@@ -117,7 +145,10 @@ class SignalAnalyzer:
             log_ai_response(message.chat_id, "gemini", used_model, response)
 
             result = response.parsed or AiTradeResponse.model_validate_json(response.text)
-            return self._post_process(result, existing_orders, market, message.text)
+            result = self._validate_symbol(result)
+            if post_process:
+                return self._post_process(result, existing_orders, market, message.text)
+            return result
 
         except Exception as exc:
             log_ai_error(message.chat_id, "gemini", primary_model, exc)

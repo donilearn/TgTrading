@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_META_CONTEXT_TIMEOUT = 45.0
+_META_CONTEXT_TIMEOUT = 30.0
 
 
 class TradingContextLoader:
@@ -70,23 +70,10 @@ class TradingContextLoader:
         chat_id: int,
         group_magics: list[int],
     ) -> tuple[list[ExistingOrder], list[SymbolMarketInfo], int]:
-        try:
-            return await asyncio.wait_for(
-                self._load_metaapi_once(magic, chat_id, group_magics),
-                timeout=_META_CONTEXT_TIMEOUT,
-            )
-        except TimeoutError:
-            logger.error(
-                "MetaAPI context timeout (%ss) chat=%s magic=%s — reconnecting",
-                _META_CONTEXT_TIMEOUT,
-                chat_id,
-                magic,
-            )
-            await self._trading.reconnect_all()
-            return await asyncio.wait_for(
-                self._load_metaapi_once(magic, chat_id, group_magics),
-                timeout=_META_CONTEXT_TIMEOUT,
-            )
+        return await asyncio.wait_for(
+            self._load_metaapi_once(magic, chat_id, group_magics),
+            timeout=_META_CONTEXT_TIMEOUT,
+        )
 
     async def _load_metaapi_once(
         self,

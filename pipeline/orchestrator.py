@@ -37,7 +37,11 @@ class TradingPipeline:
         self._gemini = GeminiClient(settings)
         self._analyzer = SignalAnalyzer(self._gemini, settings)
         self._trading = create_trading_service(settings, win_mode=win_mode)
-        self._keeper = create_connection_keeper(self._trading, win_mode=win_mode)
+        self._keeper = create_connection_keeper(
+            self._trading,
+            win_mode=win_mode,
+            settings=settings,
+        )
         self._limit_tracker = OrderLimitTracker(
             max_per_channel=settings.max_order_count,
             max_per_message=settings.effective_max_per_message,
@@ -75,11 +79,13 @@ class TradingPipeline:
 
         self._inflight_messages += 1
         try:
-            return await self._process_message(message, context, is_edit=is_edit)
+            if self._win_mode:
+                return await self._process_message_win(message, context, is_edit=is_edit)
+            return await self._process_message_metaapi(message, context, is_edit=is_edit)
         finally:
             self._inflight_messages -= 1
 
-    async def _process_message(
+    async def _process_message_win(
         self,
         message: ChatMessage,
         context: list[ChatMessage],
@@ -126,87 +132,9 @@ class TradingPipeline:
                 is_edit=is_edit,
             )
 
-            if (response.reasoning or "").startswith("Analysis error:"):
-                return False
-
-            for item in response.orders:
-                logger.info(
-                    "Analysis [%s]: countOrder=%s type=%s price=%s sl=%s tp=%s orderType=%s vol=%s",
-                    message.chat_id,
-                    item.count_order,
-                    item.action_type,
-                    item.price,
-                    item.sl,
-                    item.tp,
-                    item.order_type,
-                    item.volume,
-                )
-            logger.info(
-                "Analysis [%s]: signal=%s symbol=%s side=%s orders=%d actionable=%s — %s",
-                message.chat_id,
-                response.is_signal,
-                response.symbol,
-                response.side,
-                len(response.orders),
-                response.is_actionable,
-                response.reasoning,
+            return await self._execute_if_actionable(
+                message, response, magic, existing, market,
             )
-
-            if not response.is_actionable:
-                return True
-
-            planned_entries = self._executor.count_entry_orders(response)
-            existing_group_count = len(existing)
-
-            if planned_entries > 0:
-                ref_price = reference_price_from_market(response.symbol, market)
-                msg_tp_override = message_tp_level_count(message.text, ref_price)
-
-                allowed, limit_msg, to_place = self._limit_tracker.can_place(
-                    message.chat_id,
-                    planned_entries,
-                    existing_group_count,
-                    msg_tp_override=msg_tp_override,
-                )
-                if not allowed:
-                    logger.info("Trade skipped: %s", limit_msg)
-                    return True
-                if limit_msg:
-                    logger.info("Trade capped: %s", limit_msg)
-            else:
-                to_place = None
-
-            results = await self._executor.execute(
-                self._trading,
-                response,
-                magic,
-                existing,
-                max_entries=to_place,
-                channel_name=message.chat_title,
-                message_time=message.date,
-            )
-
-            entries_placed = 0
-            for result in results:
-                if result.skipped:
-                    logger.info("Trade skipped: %s", result.message)
-                elif result.success:
-                    if result.action not in ("close", "cancel", "modify"):
-                        entries_placed += 1
-                    logger.info(
-                        "Trade OK: %s %s vol=%.2f — %s",
-                        result.action,
-                        result.symbol,
-                        result.volume or 0,
-                        result.message,
-                    )
-                else:
-                    logger.error("Trade failed: %s", result.message)
-
-            if entries_placed:
-                self._limit_tracker.record(message.chat_id, entries_placed)
-
-            return True
 
         except Exception:
             logger.exception(
@@ -216,14 +144,231 @@ class TradingPipeline:
             )
             return False
 
+    async def _process_message_metaapi(
+        self,
+        message: ChatMessage,
+        context: list[ChatMessage],
+        *,
+        is_edit: bool = False,
+    ) -> bool:
+        try:
+            magic = self._settings.get_group_magic(message.chat_id)
+            edit_tag = " (edited)" if is_edit else ""
+            logger.info(
+                "Processing message%s chat=%s magic=%s msg=%s text=%r media=%s",
+                edit_tag,
+                message.chat_id,
+                magic,
+                message.message_id,
+                (message.text or "")[:120],
+                bool(message.media),
+            )
+
+            response = await self._analyzer.analyze_message(message, context, is_edit=is_edit)
+
+            if (response.reasoning or "").startswith("Analysis error:"):
+                return False
+
+            self._log_analysis(message.chat_id, response, prefix="Analysis (LLM)")
+
+            if not response.is_signal:
+                await self._maybe_auto_breakeven_on_active_session(magic, message.chat_id)
+                return True
+
+            try:
+                await self._trading.ensure_session(
+                    self._settings.parsed_allowed_symbols,
+                )
+                existing, market, _global_count = await self._context_loader.load(
+                    magic,
+                    message.chat_id,
+                    self._settings.group_magic_list,
+                )
+            except Exception as exc:
+                logger.error(
+                    "MetaAPI session failed for chat=%s — trade skipped: %s",
+                    message.chat_id,
+                    exc,
+                )
+                return False
+
+            if await self._auto_breakeven.apply_on_message(
+                self._trading, existing, market,
+            ):
+                existing, market, _global_count = await self._context_loader.load(
+                    magic,
+                    message.chat_id,
+                    self._settings.group_magic_list,
+                )
+
+            logger.info(
+                "Context loaded chat=%s orders=%d market_symbols=%d",
+                message.chat_id,
+                len(existing),
+                len(market),
+            )
+
+            response = self._analyzer.enrich_with_broker_context(
+                response, existing, market, message.text,
+            )
+
+            executed = await self._execute_if_actionable(
+                message, response, magic, existing, market,
+            )
+            if not response.is_actionable:
+                self._trading.touch_session()
+            return executed
+
+        except Exception:
+            logger.exception(
+                "Failed to handle message from %s in %s",
+                message.sender,
+                message.chat_id,
+            )
+            return False
+
+    async def _maybe_auto_breakeven_on_active_session(
+        self,
+        magic: int,
+        chat_id: int,
+    ) -> None:
+        """Faol MetaAPI sessiyasi bo'lsa auto-BE — spam xabarda ulanish yo'q."""
+        if not getattr(self._trading, "is_connected", False):
+            return
+        try:
+            existing, market, _ = await self._context_loader.load(
+                magic,
+                chat_id,
+                self._settings.group_magic_list,
+            )
+            await self._auto_breakeven.apply_on_message(
+                self._trading, existing, market,
+            )
+        except Exception as exc:
+            logger.debug("Auto-BE on active session skipped chat=%s: %s", chat_id, exc)
+
+    async def _execute_if_actionable(
+        self,
+        message: ChatMessage,
+        response,
+        magic: int,
+        existing,
+        market,
+    ) -> bool:
+        self._log_analysis(message.chat_id, response)
+
+        if not response.is_actionable:
+            return True
+
+        planned_entries = self._executor.count_entry_orders(response)
+        existing_group_count = len(existing)
+
+        if planned_entries > 0:
+            ref_price = reference_price_from_market(response.symbol, market)
+            msg_tp_override = message_tp_level_count(message.text, ref_price)
+
+            allowed, limit_msg, to_place = self._limit_tracker.can_place(
+                message.chat_id,
+                planned_entries,
+                existing_group_count,
+                msg_tp_override=msg_tp_override,
+            )
+            if not allowed:
+                logger.info("Trade skipped: %s", limit_msg)
+                return True
+            if limit_msg:
+                logger.info("Trade capped: %s", limit_msg)
+        else:
+            to_place = None
+
+        results = await self._executor.execute(
+            self._trading,
+            response,
+            magic,
+            existing,
+            max_entries=to_place,
+            channel_name=message.chat_title,
+            message_time=message.date,
+        )
+
+        entries_placed = 0
+        for result in results:
+            if result.skipped:
+                logger.info("Trade skipped: %s", result.message)
+            elif result.success:
+                if result.action not in ("close", "cancel", "modify"):
+                    entries_placed += 1
+                logger.info(
+                    "Trade OK: %s %s vol=%.2f — %s",
+                    result.action,
+                    result.symbol,
+                    result.volume or 0,
+                    result.message,
+                )
+            else:
+                logger.error("Trade failed: %s", result.message)
+
+        if entries_placed:
+            self._limit_tracker.record(message.chat_id, entries_placed)
+
+        if not self._win_mode:
+            self._trading.touch_session()
+
+        return True
+
+    @staticmethod
+    def _log_analysis(chat_id: int, response, *, prefix: str = "Analysis") -> None:
+        for item in response.orders:
+            logger.info(
+                "%s [%s]: countOrder=%s type=%s price=%s sl=%s tp=%s orderType=%s vol=%s",
+                prefix,
+                chat_id,
+                item.count_order,
+                item.action_type,
+                item.price,
+                item.sl,
+                item.tp,
+                item.order_type,
+                item.volume,
+            )
+        actionable = getattr(response, "is_actionable", None)
+        if actionable is None:
+            logger.info(
+                "%s [%s]: signal=%s symbol=%s side=%s orders=%d — %s",
+                prefix,
+                chat_id,
+                response.is_signal,
+                response.symbol,
+                response.side,
+                len(response.orders),
+                response.reasoning,
+            )
+        else:
+            logger.info(
+                "%s [%s]: signal=%s symbol=%s side=%s orders=%d actionable=%s — %s",
+                prefix,
+                chat_id,
+                response.is_signal,
+                response.symbol,
+                response.side,
+                len(response.orders),
+                actionable,
+                response.reasoning,
+            )
+
     async def start(self) -> None:
         await self._telegram.start()
-        await self._trading.connect()
-        if not self._win_mode:
-            await self._trading.subscribe_market_data(
-                self._settings.parsed_allowed_symbols,
+        if self._win_mode:
+            await self._trading.connect()
+        else:
+            logger.info(
+                "MetaAPI on-demand mode — connect on signal only "
+                "(idle_disconnect=%ss, keeper=%s)",
+                self._settings.metaapi_idle_disconnect_sec,
+                self._settings.metaapi_keeper_enabled,
             )
-        self._keeper.start()
+        if self._win_mode or self._settings.metaapi_keeper_enabled:
+            self._keeper.start()
         self._listener.register()
 
         mode = "LIVE" if self._settings.trading_enabled else "DRY-RUN"
