@@ -54,6 +54,20 @@ class MT5ExpirationResolverTests(unittest.TestCase):
         self.assertEqual(request["type_time"], mt5.ORDER_TIME_GTC)
         self.assertNotIn("expiration", request)
 
+    def test_gtc_mode_does_not_warn_about_short_expiration(self):
+        request: dict = {"symbol": "GOLDmicro", "type_time": mt5.ORDER_TIME_GTC}
+        info = MagicMock(expiration_mode=_SYMBOL_EXPIRATION_GTC)
+        tick = MagicMock(time=1_700_000_000)
+
+        with patch("trading.mt5.expiration_resolver.mt5.symbol_info", return_value=info), patch(
+            "trading.mt5.expiration_resolver.mt5.symbol_info_tick",
+            return_value=tick,
+        ), patch("trading.mt5.expiration_resolver.logger") as log:
+            apply_mt5_pending_expiration(request, "GOLDmicro", 1)
+
+        self.assertEqual(request["type_time"], mt5.ORDER_TIME_GTC)
+        log.warning.assert_not_called()
+
     def test_day_mode_uses_order_time_day(self):
         request: dict = {"symbol": "GOLDmicro", "type_time": mt5.ORDER_TIME_GTC}
         info = MagicMock(
