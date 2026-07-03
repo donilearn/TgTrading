@@ -25,6 +25,7 @@ def resolve_expiration_minutes(
 def build_expiration_options(minutes: int) -> dict:
     return {
         "type": _EXPIRATION_TYPE,
+        "minutes": minutes,
         "time": datetime.now(UTC) + timedelta(minutes=minutes),
     }
 

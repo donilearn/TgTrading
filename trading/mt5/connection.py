@@ -116,6 +116,23 @@ class MT5Connection:
             raise RuntimeError(_format_trade_error(check.retcode, check.comment))
 
         result = mt5.order_send(request)
+        if (
+            result is not None
+            and result.retcode == mt5.TRADE_RETCODE_INVALID_EXPIRATION
+            and request.get("action") == mt5.TRADE_ACTION_PENDING
+            and request.get("type_time") != mt5.ORDER_TIME_GTC
+        ):
+            logger.warning(
+                "MT5 invalid expiration for %s — retrying as GTC",
+                request.get("symbol"),
+            )
+            fallback = {
+                **request,
+                "type_time": mt5.ORDER_TIME_GTC,
+            }
+            fallback.pop("expiration", None)
+            result = mt5.order_send(fallback)
+
         if result is None:
             error = mt5.last_error()
             raise RuntimeError(f"MT5 order_send failed: {error}")

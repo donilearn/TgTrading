@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import Any
 
 import MetaTrader5 as mt5
 
+from trading.mt5.expiration_resolver import apply_mt5_pending_expiration
 from trading.mt5.filling_resolver import resolve_filling_mode
 from trading.mt5.symbol_helper import ensure_symbol, get_price_dict, normalize_volume
 from trading.order_comment import sanitize_mt5_comment
@@ -211,9 +211,12 @@ def _apply_expiration(request: dict, options: dict | None) -> None:
     if not expiration:
         return
 
-    exp_time = expiration.get("time")
-    if not isinstance(exp_time, datetime):
+    minutes = expiration.get("minutes")
+    if minutes is None:
         return
 
-    request["type_time"] = mt5.ORDER_TIME_SPECIFIED
-    request["expiration"] = int(exp_time.timestamp())
+    symbol = request.get("symbol")
+    if not symbol:
+        return
+
+    apply_mt5_pending_expiration(request, str(symbol), int(minutes))
