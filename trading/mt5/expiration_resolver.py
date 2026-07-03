@@ -32,7 +32,8 @@ def apply_mt5_pending_expiration(
         return
 
     mode = int(getattr(info, "expiration_mode", 0) or 0)
-    target_ts = server_ts + max(minutes * 60, _MIN_EXPIRY_SEC)
+    expiry_sec = _resolve_expiry_seconds(symbol, minutes)
+    target_ts = server_ts + expiry_sec
 
     if mode & _SYMBOL_EXPIRATION_SPECIFIED:
         request["type_time"] = mt5.ORDER_TIME_SPECIFIED
@@ -66,6 +67,22 @@ def apply_mt5_pending_expiration(
         mode,
         minutes,
     )
+
+
+def _resolve_expiry_seconds(symbol: str, minutes: int) -> int:
+    requested_sec = minutes * 60
+    if requested_sec >= _MIN_EXPIRY_SEC:
+        return requested_sec
+
+    logger.warning(
+        "Symbol %s: requested expiration %d min (%ds) below broker minimum %ds — using %ds",
+        symbol,
+        minutes,
+        requested_sec,
+        _MIN_EXPIRY_SEC,
+        _MIN_EXPIRY_SEC,
+    )
+    return _MIN_EXPIRY_SEC
 
 
 def _server_timestamp(symbol: str) -> int | None:
