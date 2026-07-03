@@ -1,5 +1,6 @@
 import logging
 
+from ai.pending_price_guard import has_pending_near_price
 from ai.sl_level_parser import parse_sl_level
 from ai.tp_order_count import message_tp_levels, reference_price_from_market
 from ai.zone_bounds_parser import parse_zone_bounds
@@ -53,6 +54,13 @@ def sync_type1_zone_entries(
         item for item in response.orders
         if item.action_type.lower() in _MANAGEMENT_TYPES
     ]
+    market_entries = [
+        item for item in response.orders
+        if item.action_type.lower() == "entry"
+        and item.order_type.lower() == "market"
+    ]
+    if positions:
+        market_entries = []
 
     prices = evenly_spaced_prices(zone_low, zone_high, len(tp_levels))
     expiration = settings.orders_expiration_minutes or None
@@ -66,7 +74,7 @@ def sync_type1_zone_entries(
                 count_order=modify_target,
                 action_type="modify",
                 sl=sl,
-                tp=tp_levels[0],
+                tp=None,
                 order_type="market",
             )
         )
@@ -85,7 +93,7 @@ def sync_type1_zone_entries(
             settings.max_volume,
         )
         for index, (price, tp) in enumerate(zip(entry_prices, entry_tps)):
-            if _has_pending_near(existing, symbol, side, price):
+            if has_pending_near_price(existing, symbol, side, price):
                 continue
             orders.append(
                 AiOrderAction(
@@ -116,7 +124,7 @@ def sync_type1_zone_entries(
         update={
             "zone_low": zone_low,
             "zone_high": zone_high,
-            "orders": orders,
+            "orders": management + market_entries + orders,
         },
     )
 
@@ -162,20 +170,3 @@ def _modify_target(
     return int(positions[0].order_number)
 
 
-def _has_pending_near(
-    existing: list[ExistingOrder],
-    symbol: str,
-    side: str,
-    price: float,
-    tolerance: float = 0.5,
-) -> bool:
-    for item in existing:
-        if item.is_position:
-            continue
-        if item.symbol != symbol:
-            continue
-        if item.side.lower() != side.lower():
-            continue
-        if abs(item.open_price - price) <= tolerance:
-            return True
-    return False

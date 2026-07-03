@@ -9,8 +9,14 @@ from ai.media_parser import MediaParser
 from ai.message_media import enrich_with_parsed_media, is_audio_video
 from ai.model_retry import generate_with_fallback
 from ai.prompts import build_system_prompt
+from ai.close_all_detector import message_asks_close_all
+from ai.close_all_patcher import apply_close_all_from_message
 from ai.default_sltp_patcher import apply_default_sltp_to_entries
+from ai.duplicate_zone_guard import remove_duplicate_zone_entries
+from ai.entry_count_normalizer import normalize_entry_count_orders
+from ai.noise_message_filter import suppress_noise_entries
 from ai.existing_position_sltp_patcher import patch_existing_positions_sltp
+from ai.market_first_patcher import apply_market_first_policy
 from ai.partial_close_patcher import apply_partial_close_from_message
 from ai.redundant_market_guard import remove_redundant_market_entries
 from ai.request_logger import log_ai_error, log_ai_request, log_ai_response
@@ -101,6 +107,11 @@ class SignalAnalyzer:
         message_text: str | None,
     ) -> AiTradeResponse:
         """Broker snapshot bilan post-process (MetaAPI ulanishdan keyin)."""
+        if message_asks_close_all(message_text):
+            return apply_close_all_from_message(
+                result, existing_orders, message_text,
+            )
+
         if not result.is_signal:
             return result
         return self._post_process(result, existing_orders, market, message_text)
@@ -167,6 +178,16 @@ class SignalAnalyzer:
         message_text: str | None,
     ) -> AiTradeResponse:
         result = self._validate_symbol(result)
+        result = normalize_entry_count_orders(result)
+        result = apply_close_all_from_message(result, existing_orders, message_text)
+        result = suppress_noise_entries(result, existing_orders, message_text)
+        result = apply_market_first_policy(
+            result,
+            existing_orders,
+            message_text,
+            self._settings,
+            market=market,
+        )
         result = remove_redundant_market_entries(
             result, existing_orders, message_text=message_text,
         )
@@ -193,6 +214,7 @@ class SignalAnalyzer:
             self._settings,
             market=market,
         )
+        result = remove_duplicate_zone_entries(result, existing_orders)
         result = apply_partial_close_from_message(
             result,
             existing_orders,

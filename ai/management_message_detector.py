@@ -1,5 +1,7 @@
 import re
 
+from ai.close_all_detector import message_asks_close_all
+
 # Broker kontekstsiz LLM bu xabarlarni noto'g'ri is_signal=false deb qaytaradi.
 _PROFIT_UPDATE = re.compile(
     r"\d+\s*pips?\s*(\+\+|✅|hit|done|reached)?",
@@ -40,6 +42,9 @@ def message_needs_broker_context(text: str | None) -> bool:
     """MetaAPI order snapshot talab qiladigan management xabarlar."""
     if not text or not text.strip():
         return False
+
+    if message_asks_close_all(text):
+        return True
 
     lower = text.lower()
     if _PROFIT_UPDATE.search(lower):

@@ -38,7 +38,11 @@ def apply_default_sltp_to_entries(
             updated.append(item)
             continue
 
-        if item.sl is not None and item.tp is not None:
+        is_market = item.order_type.lower() == "market"
+        if is_market and item.sl is not None and not settings.default_sl_pips:
+            updated.append(item.model_copy(update={"tp": None}))
+            continue
+        if not is_market and item.sl is not None and item.tp is not None:
             updated.append(item)
             continue
 
@@ -49,15 +53,18 @@ def apply_default_sltp_to_entries(
                 {"bid": market_info.bid, "ask": market_info.ask},
             )
 
+        default_tp = 0 if is_market else settings.default_tp_pips
         sl, tp = resolve_default_sltp_prices(
             side=side,
             entry_price=entry_price,
             spec=spec,
             default_sl_pips=settings.default_sl_pips,
-            default_tp_pips=settings.default_tp_pips,
+            default_tp_pips=default_tp,
             existing_sl=item.sl,
-            existing_tp=item.tp,
+            existing_tp=None if is_market else item.tp,
         )
+        if is_market:
+            tp = None
 
         if sl == item.sl and tp == item.tp:
             updated.append(item)

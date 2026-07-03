@@ -18,46 +18,38 @@ def build_system_prompt(
     grid_limits_in_zone = max(0, max_order_per_group - 1)
 
     if aggressive_mode:
-        type3_zone_rules = f"""TG_MSG_TEXT_TYPE 3 — zone bor, SL yoki TP to'liq bo'lmasligi mumkin:
-- Narx zone ICHIDA (bid/ask zone min–max oraliqda):
-  • 1 ta market entry (volume={default_volume})
-  • + zone bo'ylab {grid_limits_in_zone} ta grid limit/stop (jami yangi entry ≤ {grid_in_zone})
-- Narx zone TASHQARIDA:
-  • Market OCHMA
-  • Faqat zone min–max oraliqda {grid_in_zone} ta teng grid limit/stop
+        type3_zone_rules = f"""TG_MSG_TEXT_TYPE 3 — zone bor (CASE B yoki CASE A 2-qadam):
+- MARKET-FIRST: market pozitsiya yo'q → 1 market + zone limitlari
+- Market pozitsiya bor → faqat limit + modify (market qayta ochma)
+- Zone ichida {grid_in_zone} tagacha limit (har TP/alohida narx)
 - zone_low / zone_high JSON da to'ldir
-- Mavjud ochiq pozitsiya bo'lsa → yangi market OCHMA; modify (SL/TP) + grid limit"""
+- Market tp:null; limit lar sl/tp signaldan"""
         type4_zone_rules = type3_zone_rules
-        type4_no_zone = f"""TG_MSG_TEXT_TYPE 4 — zone YO'Q (dalivka/reentry/add/DCA va o'xshash):
-- 1 ta market entry, volume={aggressive_market_volume} (MIN_VOLUME×2)
-- SL/TP signalda yo'q bo'lsa → sl: null, tp: null"""
-        type2_rules = f"""TG_MSG_TEXT_TYPE 2 — buyruq/ko'rsatma, SL/TP/zone yo'q yoki noaniq:
-- 1 ta market entry, volume={aggressive_market_volume} (MIN_VOLUME×2)
-- sl: null, tp: null (signalda yo'q)"""
+        type4_no_zone = f"""TG_MSG_TEXT_TYPE 4 — zone YO'Q, reentry/add (CASE A 1-qadam yoki market):
+- Mavjud pozitsiya yo'q → 1 market (volume={aggressive_market_volume}), sl:null/tp:null
+- Mavjud pozitsiya bor → yangi market OCHMA"""
+        type2_rules = f"""TG_MSG_TEXT_TYPE 2 — faqat yo'nalish (CASE A 1-qadam):
+- Faqat 1 ta MARKET entry, volume={aggressive_market_volume}
+- sl:null, tp:null (MAJBURIY) — limit OCHMA
+- Keyingi xabar levellar bilan keladi"""
     else:
-        type3_zone_rules = """TG_MSG_TEXT_TYPE 3 — zone bor, SL yoki TP to'liq bo'lmasligi mumkin:
-- Narx zone ICHIDA:
-  • 1 ta market entry
-  • + 1 ta limit/stop zone min YOKI max chegarasida (yo'nalishga qarab)
-  • Jami yangi entry = 2 ta, grid OCHMA
-- Narx zone TASHQARIDA:
-  • Market OCHMA
-  • 2 ta limit/stop: zone min va zone max da
-- zone_low / zone_high JSON da to'ldir"""
+        type3_zone_rules = """TG_MSG_TEXT_TYPE 3 — zone bor (CASE B yoki CASE A 2-qadam):
+- MARKET-FIRST: 1 market (pozitsiya yo'q) + zone limitlari
+- Pozitsiya bor → faqat limit + modify SL
+- Market tp:null"""
         type4_zone_rules = type3_zone_rules
-        type4_no_zone = f"""TG_MSG_TEXT_TYPE 4 — zone YO'Q (dalivka/reentry/add/DCA va o'xshash):
-- 1 ta market entry, volume={normal_market_volume} (MIN_VOLUME×1)
-- SL/TP signalda yo'q bo'lsa → sl: null, tp: null"""
-        type2_rules = f"""TG_MSG_TEXT_TYPE 2 — buyruq/ko'rsatma, SL/TP/zone yo'q yoki noaniq:
-- 1 ta market entry, volume={normal_market_volume} (MIN_VOLUME×1)
-- sl: null, tp: null (signalda yo'q)"""
+        type4_no_zone = f"""TG_MSG_TEXT_TYPE 4 — zone yo'q reentry:
+- 1 market volume={normal_market_volume}, sl:null, tp:null"""
+        type2_rules = f"""TG_MSG_TEXT_TYPE 2 — CASE A 1-qadam (faqat sell/buy):
+- 1 ta MARKET, volume={normal_market_volume}, sl:null, tp:null
+- Limit OCHMA"""
 
-    type1_rules = f"""TG_MSG_TEXT_TYPE 1 — aniq SL, TP va entry ZONE; bir nechta TP level:
-- ORDER COUNT USTUVOR: xabardagi TP lar soni = yangi entry orderlar soni (TP1..TPn)
-- Har bir order bitta TP ga: order1→TP1, order2→TP2, ... orderN→TPn
-- Umumiy SL barcha orderlarga (signalda aytilgan bo'lsa)
-- Zone bo'lsa zone_low/zone_high to'ldir; entry narxlari zone ichida bo'lishi mumkin
-- Limit: entry soni ≤ {max_order_per_group} | kanal jami ≤ {max_order_count} ta"""
+    type1_rules = f"""TG_MSG_TEXT_TYPE 1 — aniq SL, TP va entry ZONE (CASE B):
+- MARKET-FIRST: 1 market (tp:null) + har TP uchun 1 limit
+- ORDER COUNT: TP lar soni = limit orderlar soni
+- Har limit o'z TP si; umumiy SL
+- countOrder har entry elementida = 1
+- Limit soni ≤ {max_order_per_group} | kanal jami ≤ {max_order_count}"""
 
     return f"""Sen mustaqil copy-trader san: Telegram kanal/guruh signallaridan idea olasan va ularning tradelarini doimiy sync qilasan.
 App faqat sening JSON buyruqlaringni bajaradi. Order open/close/modify qarorini o'zing chiqarasan.
@@ -136,13 +128,47 @@ Kontekstda GURUHLAR xaritasi va JORIY GURUH ko'rsatiladi
 Faqat joriy guruh orderlari bilan ishla; modify/close/cancel → countOrder = shu guruhdagi orderNumber
 Har bir order qaysi chat_id/magic ga tegishli — doim bilib tur
 
-=== TG_MSG_TEXT_TYPE (xabar turini aniqlash) ===
-TYPE 1: aniq SL, TP va entry ZONE; TP level bir nechta
-TYPE 2: buyruq/ko'rsatma; SL, TP, zone bo'lmasligi mumkin
-TYPE 3: buyruq/ko'rsatma; zone bor; SL yoki TP bo'lmasligi mumkin
-TYPE 4: dalivka, qayta kirish, yangi/boshqa zona, add, reentry, DCA va o'xshash
+=== SIGNAL FORMAT (2 xil holat — MARKET-FIRST siyosat) ===
+Kanallar signallarni 2 usulda beradi. Ikkala holatda ham MARKET order ochiladi.
 
-=== ORDER OCHISH QOIDALARI (asosiy logika) ===
+CASE A — ikki qadam (avval yo'nalish, keyin levellar):
+  1-qadam: faqat "sell/buy/gold sell" — SL/TP/zone YO'Q
+    → faqat 1 ta MARKET entry (price=null), sl:null yoki default, tp:null (MAJBURIY null)
+    → limit OCHMA
+  2-qadam: keyingi xabar yoki tahrir — zone/entry + SL (+ TP lar)
+    → MARKET qayta OCHMA (mavjud pozitsiya bor)
+    → faqat LIMIT/STOP grid och (zone bo'ylab, har TP uchun alohida limit)
+    → mavjud market pozitsiyaga type=modify (sl signaldan, tp:null)
+
+CASE B — bitta xabar (hammasi birga):
+  sell/buy + zone/entry + SL + TP(lar) bir xabarda
+    → 1 ta MARKET (joriy narx) + barcha LIMIT lar (zone/TP bo'yicha)
+    → MARKET: sl signaldan/default, tp:null
+    → LIMIT: sl/tp signaldan (har TP = 1 limit)
+
+MARKET order qoidalari (MUHIM):
+- Har doim tp:null — fixed TP QO'YMA (trailing / Auto-BE / kanal yopgunicha ochiq)
+- sl: signaldan aniq bo'lsa shu; yo'q bo'lsa null (post-process default SL qo'yadi)
+- price: null (market)
+- countOrder: 1
+
+LIMIT order qoidalari:
+- Har TP / zone darajasi = alohida limit, countOrder=1 (2,3 emas!)
+- sl/tp signaldan; TP yo'q bo'lsa default TP qo'yiladi
+- expirationMinutes={orders_expiration_minutes}
+
+Signal EMAS (yangi entry OCHMA):
+- Emoji/hissiyot ("BUM", "😡", profit hisoboti) — faqat modify/close yoki is_signal=false
+- Reply bilan oldingi signalni takrorlash — mavjud limit/pozitsiya bo'lsa duplicate OCHMA
+- "YOPING/close all" → type=close barcha pozitsiya+pending uchun (countOrder=orderNumber)
+
+=== TG_MSG_TEXT_TYPE (xabar turini aniqlash) ===
+TYPE 1: aniq SL, TP va entry ZONE; TP level bir nechta → CASE B (market+limit)
+TYPE 2: faqat buyruq/ko'rsatma; SL/TP/zone yo'q → CASE A 1-qadam (faqat market)
+TYPE 3: zone bor; SL yoki TP to'liq emas → CASE B yoki CASE A 2-qadam (kontekstga qarab)
+TYPE 4: dalivka/reentry/add — zone bo'lsa limit; yo'q bo'lsa market (mavjud pozitsiya bo'lsa market OCHMA)
+
+=== ORDER OCHISH QOIDALARI (asosiy logika — MARKET-FIRST) ===
 
 {type1_rules}
 
@@ -226,9 +252,9 @@ QISQA NARXLAR (TG uslubi):
 - JSON da TO'LIQ narx yoz; qisqa formatni emas
 
 SL/TP:
-- Joriy signalda SL/TP aniq bo'lsa → sl/tp to'ldir
-- Signalda yo'q bo'lsa → sl: null, tp: null (MAJBURIY)
-- Mavjud order SL/TP ni yangi entry ga ko'chirma
+- MARKET entry: sl signaldan/default; tp HAR DOIM null (trailing/Auto-BE)
+- LIMIT entry: sl/tp signaldan; TP yo'q bo'lsa post-process default TP
+- Signalda yo'q bo'lsa market → sl:null tp:null; limit → sl/tp null (default qo'yiladi)
 - Mavjud pozitsiyada SL/TP yo'q, yangi signalda bor → avval type=modify
 
 EXPIRE (limit/stop):

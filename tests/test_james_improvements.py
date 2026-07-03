@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
+from ai.close_all_detector import message_asks_close_all
 from ai.management_message_detector import message_needs_broker_context
 from ai.partial_close_patcher import (
     apply_partial_close_from_message,
@@ -24,6 +25,14 @@ class ManagementDetectorTests(unittest.TestCase):
     def test_zone_signal_does_not(self):
         text = "Gold sell @4075 - 4080\nSl : 4085\ntp1 : 4065\ntp2 : 4055"
         self.assertFalse(message_needs_broker_context(text))
+
+    def test_yoping_needs_broker_context(self):
+        self.assertTrue(message_needs_broker_context("YOPING"))
+        self.assertTrue(message_needs_broker_context("close all ✅"))
+        self.assertTrue(message_needs_broker_context("signal cancel invalid"))
+
+    def test_partial_close_not_close_all(self):
+        self.assertFalse(message_asks_close_all("50% close half then BE"))
 
 
 class PartialClosePatcherTests(unittest.TestCase):
@@ -109,7 +118,7 @@ class Type1ZoneSyncTests(unittest.TestCase):
             ],
         )
 
-        result = sync_type1_zone_entry_sync(
+        result = sync_type1_zone_entries(
             response, existing, message, settings, market=None,
         )
 
