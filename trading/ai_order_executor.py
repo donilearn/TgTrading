@@ -15,6 +15,7 @@ from trading.order_expiration_builder import apply_pending_order_expiration
 from trading.error_formatter import format_trade_error
 from trading.order_router import OrderRouter
 from trading.partial_close_handler import resolve_close_volume
+from trading.pending_order_type_resolver import resolve_pending_order_type
 from trading.price_normalizer import normalize_price
 from trading.sltp_price_resolver import market_entry_price, resolve_default_sltp_prices
 from trading.symbol_spec_cache import SymbolSpecCache
@@ -200,6 +201,11 @@ class AiOrderExecutor:
         if order_type != OrderType.MARKET and entry_price is None:
             raise ValueError(f"{order_type.value} order requires price")
 
+        if order_type != OrderType.MARKET and entry_price is not None:
+            order_type = await self._resolve_pending_order_type(
+                connection, symbol, response.side, entry_price, order_type,
+            )
+
         signal = SignalAnalysis(
             is_signal=True,
             signal_type=SignalType.ENTRY,
@@ -371,6 +377,36 @@ class AiOrderExecutor:
         raw = volume or self._settings.default_volume
         clamped = max(self._settings.min_volume, min(raw, self._settings.max_volume))
         return round_volume(clamped)
+
+    async def _resolve_pending_order_type(
+        self,
+        connection: Any,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        requested: OrderType,
+    ) -> OrderType:
+        if requested not in (OrderType.LIMIT, OrderType.STOP):
+            return requested
+
+        quote = await self._spec_cache.get_price(connection, symbol)
+        bid = _to_float(quote.get("bid"))
+        ask = _to_float(quote.get("ask"))
+        resolved = resolve_pending_order_type(side, entry_price, bid, ask)
+        order_type = _parse_order_type(resolved)
+
+        if order_type != requested:
+            logger.info(
+                "Pending type adjusted %s %s @%.3f bid=%s ask=%s → %s (was %s)",
+                side,
+                symbol,
+                entry_price,
+                bid,
+                ask,
+                order_type.value,
+                requested.value,
+            )
+        return order_type
 
     async def _resolve_entry_sltp(
         self,
