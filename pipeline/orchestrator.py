@@ -30,11 +30,14 @@ _TELEGRAM_STOP_TIMEOUT = 10.0
 _INFLIGHT_DRAIN_TIMEOUT = 15.0
 
 
-def _count_full_exits(response: AiTradeResponse) -> int:
-    return sum(
-        1 for item in response.orders
+def _count_full_exits(response: AiTradeResponse, existing: list) -> int:
+    existing_numbers = {item.order_number for item in existing}
+    exiting = {
+        str(item.count_order)
+        for item in response.orders
         if item.action_type.lower() in ("close", "cancel") and item.volume is None
-    )
+    }
+    return len(exiting & existing_numbers)
 
 
 class TradingPipeline:
@@ -365,7 +368,7 @@ class TradingPipeline:
 
         planned_entries = self._executor.count_entry_orders(response)
         # Reversal / close: shu javobda yopiladigan orderlar limitni band qilmasin
-        existing_group_count = max(0, len(existing) - _count_full_exits(response))
+        existing_group_count = len(existing) - _count_full_exits(response, existing)
 
         if planned_entries > 0:
             ref_price = reference_price_from_market(response.symbol, market)
