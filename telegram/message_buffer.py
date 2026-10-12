@@ -26,6 +26,18 @@ class MessageBuffer:
             return False
         return any(item.message_id == message_id for item in buffer)
 
+    def remove(self, chat_id: int, message_ids: list[int]) -> int:
+        """O'chirilgan xabarlarni AI kontekstidan olib tashlaydi."""
+        buffer = self._buffers.get(chat_id)
+        if not buffer:
+            return 0
+        ids = set(message_ids)
+        kept = [item for item in buffer if item.message_id not in ids]
+        removed = len(buffer) - len(kept)
+        if removed:
+            self._buffers[chat_id] = deque(kept, maxlen=self._max_size)
+        return removed
+
     def add(self, message: ChatMessage) -> None:
         if message.chat_id not in self._buffers:
             self._buffers[message.chat_id] = deque(maxlen=self._max_size)

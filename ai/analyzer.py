@@ -20,6 +20,7 @@ from ai.market_first_patcher import apply_market_first_policy
 from ai.partial_close_patcher import apply_partial_close_from_message
 from ai.redundant_market_guard import remove_redundant_market_entries
 from ai.request_logger import log_ai_error, log_ai_request, log_ai_response
+from ai.reversal_patcher import apply_reversal, find_opposite_orders, without_orders
 from ai.tp_entry_expander import expand_tp_entry_orders
 from ai.type1_zone_entry_sync import sync_type1_zone_entries
 from ai.zone_grid_expander import expand_zone_grid_orders
@@ -64,8 +65,19 @@ class SignalAnalyzer:
         *,
         is_edit: bool = False,
     ) -> AiTradeResponse:
-        """Gemini tahlil + broker konteksti bilan post-process (win/MT5 rejimi)."""
-        result = await self.analyze_message(message, context, is_edit=is_edit)
+        """Gemini broker snapshot bilan tahlil qiladi, keyin post-process."""
+        if not message.text and not message.media:
+            return AiTradeResponse(is_signal=False, reasoning="Empty message")
+
+        analysis_message = await self._prepare_message(message)
+        result = await self._analyze_with_gemini(
+            analysis_message, context, existing_orders, market,
+            is_edit=is_edit,
+            post_process=False,
+            broker_loaded=True,
+        )
+        if (result.reasoning or "").startswith("Analysis error:"):
+            return result
         return self.enrich_with_broker_context(
             result, existing_orders, market, message.text,
         )
@@ -77,27 +89,31 @@ class SignalAnalyzer:
         *,
         is_edit: bool = False,
     ) -> AiTradeResponse:
-        """Faqat Gemini — MetaAPI ulanishsiz."""
+        """Faqat Gemini — MetaAPI ulanishsiz (broker snapshot yuklanmagan)."""
         if not message.text and not message.media:
             return AiTradeResponse(is_signal=False, reasoning="Empty message")
 
-        analysis_message = message
-        if is_audio_video(message.media):
-            try:
-                parsed = await self._media_parser.parse(message)
-                analysis_message = enrich_with_parsed_media(message, parsed)
-            except Exception as exc:
-                logger.warning(
-                    "Media parse failed chat=%s — Gemini with raw media: %s",
-                    message.chat_id,
-                    exc,
-                )
-
+        analysis_message = await self._prepare_message(message)
         return await self._analyze_with_gemini(
             analysis_message, context, [], [],
             is_edit=is_edit,
             post_process=False,
+            broker_loaded=False,
         )
+
+    async def _prepare_message(self, message: ChatMessage) -> ChatMessage:
+        if not is_audio_video(message.media):
+            return message
+        try:
+            parsed = await self._media_parser.parse(message)
+            return enrich_with_parsed_media(message, parsed)
+        except Exception as exc:
+            logger.warning(
+                "Media parse failed chat=%s — Gemini with raw media: %s",
+                message.chat_id,
+                exc,
+            )
+            return message
 
     def enrich_with_broker_context(
         self,
@@ -125,6 +141,7 @@ class SignalAnalyzer:
         *,
         is_edit: bool = False,
         post_process: bool = True,
+        broker_loaded: bool = True,
     ) -> AiTradeResponse:
         config = types.GenerateContentConfig(
             system_instruction=self._system_prompt,
@@ -134,6 +151,7 @@ class SignalAnalyzer:
         contents = build_gemini_contents(
             message, context, existing_orders, market, self._settings,
             is_edit=is_edit,
+            broker_loaded=broker_loaded,
         )
         primary_model = self._gemini.model
         log_ai_request(
@@ -181,47 +199,52 @@ class SignalAnalyzer:
         result = normalize_entry_count_orders(result)
         result = apply_close_all_from_message(result, existing_orders, message_text)
         result = suppress_noise_entries(result, existing_orders, message_text)
+
+        # Reversal: qarama-qarshi orderlar yopiladi — entry shakllantirishda hisobga olinmasin
+        opposite = find_opposite_orders(result, existing_orders)
+        active = without_orders(existing_orders, opposite)
+
         result = apply_market_first_policy(
             result,
-            existing_orders,
+            active,
             message_text,
             self._settings,
             market=market,
         )
         result = remove_redundant_market_entries(
-            result, existing_orders, message_text=message_text,
+            result, active, message_text=message_text,
         )
-        result = patch_existing_positions_sltp(result, existing_orders)
+        result = patch_existing_positions_sltp(result, active)
         result = apply_default_sltp_to_entries(result, self._settings, market)
         result = expand_zone_grid_orders(
             result,
             self._settings,
-            len(existing_orders),
+            len(active),
             message_text=message_text,
             market=market,
         )
         result = expand_tp_entry_orders(
             result,
             self._settings,
-            len(existing_orders),
+            len(active),
             message_text=message_text,
             market=market,
         )
         result = sync_type1_zone_entries(
             result,
-            existing_orders,
+            active,
             message_text,
             self._settings,
             market=market,
         )
-        result = remove_duplicate_zone_entries(result, existing_orders)
+        result = remove_duplicate_zone_entries(result, active)
         result = apply_partial_close_from_message(
             result,
-            existing_orders,
+            active,
             message_text,
             self._settings,
         )
-        return result
+        return apply_reversal(result, opposite)
 
     def _validate_symbol(self, result: AiTradeResponse) -> AiTradeResponse:
         if not result.symbol:

@@ -120,6 +120,11 @@ class Settings(BaseSettings):
         alias="METAAPI_KEEPER_ENABLED",
         description="Fon health-check va avto-reconnect (odatda o'chiq)",
     )
+    signal_registry_path: str = Field(
+        default="data/signal_orders.json",
+        alias="SIGNAL_REGISTRY_PATH",
+        description="Telegram xabar → ochilgan order ticketlar (o'chirilgan xabar uchun)",
+    )
     log_dir: str = Field(default="logs", alias="LOG_DIR")
     log_retention_days: int = Field(
         default=30,

@@ -15,6 +15,7 @@ from telegram.message_fingerprint import message_fingerprint
 logger = logging.getLogger(__name__)
 
 MessageHandler = Callable[..., Awaitable[bool]]
+DeletedHandler = Callable[[int, list[int]], Awaitable[None]]
 
 
 class MessageListener:
@@ -24,11 +25,13 @@ class MessageListener:
         group_ids: list[int],
         message_buffer: MessageBuffer,
         on_message: MessageHandler,
+        on_deleted: DeletedHandler | None = None,
     ) -> None:
         self._telegram = telegram_service
         self._group_ids = group_ids
         self._buffer = message_buffer
         self._on_message = on_message
+        self._on_deleted = on_deleted
         self._chat_titles: dict[int, str] = {}
         self._dispatcher = ChatMessageDispatcher()
         self._dedup = MessageDedupTracker()
@@ -135,8 +138,36 @@ class MessageListener:
             message = await self._build_message(event.message, event.chat_id)
             await self._dispatch(event.chat_id, message, is_edit=True)
 
+        # Telegram chat_id ni faqat kanal/supergroup o'chirishlarida yuboradi
+        @client.on(events.MessageDeleted(chats=self._group_ids))
+        async def on_deleted_message(event: events.MessageDeleted.Event) -> None:
+            if event.chat_id is None:
+                return
+            await self._dispatch_deleted(event.chat_id, list(event.deleted_ids))
+
         logger.info(
-            "Listening to %d group(s): %s (new + edited)",
+            "Listening to %d group(s): %s (new + edited + deleted)",
             len(self._group_ids),
             self._group_ids,
         )
+
+    async def _dispatch_deleted(self, chat_id: int, message_ids: list[int]) -> None:
+        if not message_ids:
+            return
+        logger.info("Deleted message(s) in chat %s: %s", chat_id, message_ids)
+
+        async def _handle() -> None:
+            self._buffer.remove(chat_id, message_ids)
+            if self._on_deleted is None:
+                return
+            try:
+                await self._on_deleted(chat_id, message_ids)
+            except Exception:
+                logger.exception(
+                    "Deleted-message handler failed chat=%s msgs=%s",
+                    chat_id,
+                    message_ids,
+                )
+
+        # Shu chatdagi xabar tahlili bilan ketma-ket — order yozilishidan oldin o'chirilmasin
+        await self._dispatcher.run_serial(chat_id, message_ids[0], _handle)

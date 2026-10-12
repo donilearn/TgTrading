@@ -13,3 +13,7 @@ class TradeResult(BaseModel):
         default=False,
         description="Trade was skipped (dry-run or invalid signal)",
     )
+    order_ids: list[str] = Field(
+        default_factory=list,
+        description="Broker ticket(s) of the opened order/position (entry only)",
+    )

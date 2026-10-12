@@ -32,12 +32,11 @@ def apply_mt5_pending_expiration(
         return
 
     mode = int(getattr(info, "expiration_mode", 0) or 0)
-    expiry_sec = _resolve_expiry_seconds(symbol, minutes)
-    target_ts = server_ts + expiry_sec
 
     if mode & _SYMBOL_EXPIRATION_SPECIFIED:
+        expiry_sec = _resolve_expiry_seconds(symbol, minutes)
         request["type_time"] = mt5.ORDER_TIME_SPECIFIED
-        request["expiration"] = target_ts
+        request["expiration"] = server_ts + expiry_sec
         return
 
     if mode & _SYMBOL_EXPIRATION_SPECIFIED_DAY:

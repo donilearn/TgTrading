@@ -231,6 +231,7 @@ class AiOrderExecutor:
         return TradeResult(
             success=True, symbol=symbol, action=side.value,
             volume=volume, message=result.get("stringCode", "OK"),
+            order_ids=_extract_order_ids(result),
         )
 
     async def _execute_modify(
@@ -445,6 +446,21 @@ def _round_volume_for_spec(volume: float, spec: dict) -> float:
         return volume
     steps = max(1, round(volume / step))
     return round_volume(round(steps * step, 10))
+
+
+def _extract_order_ids(result: Any) -> list[str]:
+    # MetaAPI: orderId/positionId; MT5: order (pozitsiya ticket = ochgan order ticket)
+    if not isinstance(result, dict):
+        return []
+    ids: list[str] = []
+    for key in ("orderId", "positionId", "order"):
+        value = result.get(key)
+        if value in (None, "", 0, "0"):
+            continue
+        text = str(value)
+        if text not in ids:
+            ids.append(text)
+    return ids
 
 
 def _find_order(existing: list[ExistingOrder], order_number: str) -> ExistingOrder | None:

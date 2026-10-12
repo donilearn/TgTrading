@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+from pathlib import Path
 
 from ai.analyzer import SignalAnalyzer
 from ai.management_message_detector import message_needs_broker_context
@@ -18,13 +19,22 @@ from trading.ai_order_executor import AiOrderExecutor
 from trading.client import create_connection_keeper, create_trading_service
 from trading.existing_orders_service import ExistingOrdersService
 from trading.order_limit_tracker import OrderLimitTracker
+from trading.signal_order_registry import SignalOrderRegistry
 from trading.trading_context_loader import TradingContextLoader
+from pipeline.deleted_message_handler import DeletedMessageHandler
 from pipeline.shutdown_handler import ShutdownHandler
 
 logger = logging.getLogger(__name__)
 
 _TELEGRAM_STOP_TIMEOUT = 10.0
 _INFLIGHT_DRAIN_TIMEOUT = 15.0
+
+
+def _count_full_exits(response: AiTradeResponse) -> int:
+    return sum(
+        1 for item in response.orders
+        if item.action_type.lower() in ("close", "cancel") and item.volume is None
+    )
 
 
 class TradingPipeline:
@@ -60,12 +70,21 @@ class TradingPipeline:
         self._message_buffer = MessageBuffer(
             max_size=settings.context_message_count,
         )
+        self._signal_registry = SignalOrderRegistry(Path(settings.signal_registry_path))
+        self._deleted_handler = DeletedMessageHandler(
+            settings,
+            self._signal_registry,
+            self._executor,
+            self._trading,
+            self._load_broker_context,
+        )
 
         self._listener = MessageListener(
             telegram_service=self._telegram,
             group_ids=settings.parsed_group_ids,
             message_buffer=self._message_buffer,
             on_message=self._handle_message,
+            on_deleted=self._handle_deleted,
         )
 
     async def _handle_message(
@@ -86,6 +105,27 @@ class TradingPipeline:
             return await self._process_message_metaapi(message, context, is_edit=is_edit)
         finally:
             self._inflight_messages -= 1
+
+    async def _handle_deleted(self, chat_id: int, message_ids: list[int]) -> None:
+        if self._shutting_down or self._stopped:
+            return
+        self._inflight_messages += 1
+        try:
+            await self._deleted_handler.handle(chat_id, message_ids)
+        finally:
+            self._inflight_messages -= 1
+            if not self._win_mode:
+                self._trading.touch_session()
+
+    async def _load_broker_context(self, magic: int, chat_id: int) -> tuple[list, list]:
+        if self._win_mode:
+            existing, market, _global_count = await self._context_loader.load(
+                magic,
+                chat_id,
+                self._settings.group_magic_list,
+            )
+            return existing, market
+        return await self._load_metaapi_context(magic, chat_id)
 
     async def _process_message_win(
         self,
@@ -324,7 +364,8 @@ class TradingPipeline:
             return True
 
         planned_entries = self._executor.count_entry_orders(response)
-        existing_group_count = len(existing)
+        # Reversal / close: shu javobda yopiladigan orderlar limitni band qilmasin
+        existing_group_count = max(0, len(existing) - _count_full_exits(response))
 
         if planned_entries > 0:
             ref_price = reference_price_from_market(response.symbol, market)
@@ -373,6 +414,14 @@ class TradingPipeline:
 
         if entries_placed:
             self._limit_tracker.record(message.chat_id, entries_placed)
+
+        opened_ids = [
+            order_id
+            for result in results
+            if result.success and not result.skipped
+            for order_id in result.order_ids
+        ]
+        self._signal_registry.record(message.chat_id, message.message_id, opened_ids)
 
         if not self._win_mode:
             self._trading.touch_session()

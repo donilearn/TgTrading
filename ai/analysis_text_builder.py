@@ -15,6 +15,7 @@ def build_analysis_user_text(
     *,
     media_note: str | None = None,
     is_edit: bool = False,
+    broker_loaded: bool = True,
 ) -> str:
     magic = settings.get_group_magic(message.chat_id)
     blocks = [
@@ -24,6 +25,7 @@ def build_analysis_user_text(
             settings,
             chat_id=message.chat_id,
             magic=magic,
+            broker_loaded=broker_loaded,
         ),
     ]
 

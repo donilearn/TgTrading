@@ -15,10 +15,12 @@ def build_gemini_contents(
     settings: Settings,
     *,
     is_edit: bool = False,
+    broker_loaded: bool = True,
 ) -> list:
     user_text = build_analysis_user_text(
         message, context, existing_orders, market, settings,
         is_edit=is_edit,
+        broker_loaded=broker_loaded,
     )
     parts: list = [types.Part.from_text(text=user_text)]
 

@@ -2,6 +2,12 @@ from config.settings import Settings
 from models.existing_order import ExistingOrder
 from models.symbol_market_info import SymbolMarketInfo
 
+_BROKER_NOT_LOADED = (
+    "(NOT LOADED — broker snapshot unavailable for this message. "
+    "Do NOT invent order_number values. Return the trade intent only; "
+    "the app syncs existing orders after your answer.)"
+)
+
 
 def format_analysis_context(
     existing_orders: list[ExistingOrder],
@@ -9,28 +15,41 @@ def format_analysis_context(
     settings: Settings,
     chat_id: int,
     magic: int,
+    *,
+    broker_loaded: bool = True,
 ) -> str:
     group_remaining = max(0, settings.max_order_count - len(existing_orders))
     mode_label = "AGGRESSIVE" if settings.aggressive_mode else "NORMAL"
 
+    if broker_loaded:
+        orders_block = _format_orders(existing_orders, chat_id, magic)
+        market_block = _format_market(market)
+        count_line = (
+            f"Channel total: max {settings.max_order_count} | "
+            f"existing {len(existing_orders)} | remaining {group_remaining}"
+        )
+    else:
+        orders_block = _BROKER_NOT_LOADED
+        market_block = "(NOT LOADED — use prices from the message/chart)"
+        count_line = f"Channel total: max {settings.max_order_count}"
+
     lines = [
-        "=== GURUHLAR (Telegram chat_id → MetaTrader magic) ===",
+        "=== GROUPS (Telegram chat_id → MetaTrader magic) ===",
         _format_group_map(settings, chat_id),
         "",
-        f"=== JORIY GURUH (shu xabar manbasi) ===",
+        "=== CURRENT GROUP (source of this message) ===",
         f"chat_id={chat_id} | magic={magic}",
         "",
-        "=== MAVJUD ORDERLAR (faqat joriy guruh — yangi entry SL/TP shu yerdan olinmasin) ===",
-        _format_orders(existing_orders, chat_id, magic),
+        "=== EXISTING ORDERS (current group only — never copy their SL/TP into new entries) ===",
+        orders_block,
         "",
-        "=== BOZOR (joriy holat — shu asosida tahlil qil) ===",
-        _format_market(market),
+        "=== MARKET (live quotes) ===",
+        market_block,
         "",
-        f"=== LIMITLAR ({mode_label}) ===",
-        f"Bitta xabar (1 signal): max {settings.effective_max_per_message} ta yangi entry "
+        f"=== LIMITS ({mode_label}) ===",
+        f"Per message: max {settings.effective_max_per_message} new entries "
         f"({mode_label}: {settings.max_orders_per_message}, env max {settings.max_order_per_group})",
-        f"Kanal/guruh jami: max {settings.max_order_count} ta | "
-        f"mavjud {len(existing_orders)} | qolgan {group_remaining}",
+        count_line,
         f"ORDERS_EXPIRATION: {settings.orders_expiration_minutes} min (limit/stop)",
         f"volume {settings.min_volume}..{settings.max_volume} (default {settings.default_volume})",
     ]
@@ -40,9 +59,9 @@ def format_analysis_context(
 def _format_group_map(settings: Settings, current_chat_id: int) -> str:
     rows = []
     for group_id, group_magic in settings.group_magic_by_id.items():
-        marker = " ← JORIY" if group_id == current_chat_id else ""
+        marker = " ← CURRENT" if group_id == current_chat_id else ""
         rows.append(f"chat_id={group_id} → magic={group_magic}{marker}")
-    return "\n".join(rows) if rows else "(guruhlar sozlanmagan)"
+    return "\n".join(rows) if rows else "(no groups configured)"
 
 
 def _format_orders(
@@ -51,24 +70,24 @@ def _format_orders(
     magic: int,
 ) -> str:
     if not orders:
-        return "(yo'q)"
+        return "(none — no open positions or pending orders in this group)"
 
     rows = []
     for item in orders:
+        kind = "POSITION" if item.is_position else "PENDING"
         rows.append(
-            f"orderNumber={item.order_number} | groupId={chat_id} | magic={magic} | "
-            f"openTime={item.open_time} | openPrice={item.open_price} | "
-            f"volume={item.volume} | "
+            f"order_number={item.order_number} | {kind} | side={item.side} | "
+            f"orderType={item.order_type} | symbol={item.symbol} | "
+            f"openPrice={item.open_price} | volume={item.volume} | "
             f"SL={item.stop_loss} | TP={item.take_profit} | "
-            f"side={item.side} | orderType={item.order_type} | symbol={item.symbol} | "
-            f"isPosition={item.is_position}"
+            f"openTime={item.open_time} | groupId={chat_id} | magic={magic}"
         )
     return "\n".join(rows)
 
 
 def _format_market(market: list[SymbolMarketInfo]) -> str:
     if not market:
-        return "(narxlar olinmadi)"
+        return "(quotes unavailable)"
 
     rows = []
     for item in market:
